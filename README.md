@@ -15,7 +15,7 @@ built-in desktop-entry/icon-theme lookups - no polling, no shelling out to
 external commands - and icon lookups are cached by window class, so repeat
 windows of the same app (e.g. two terminals) never repeat the lookup.
 
-<img src="screenshot.png" alt="Better Workspaces screenshot" width="600">
+<img src="preview.png" alt="Better Workspaces screenshot" width="600">
 
 ## Install
 
