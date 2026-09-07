@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  qmllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.2"
+      - name: Checkout Omarchy shell (for qs.* import path)
+        uses: actions/checkout@v4
+        with:
+          repository: basecamp/omarchy
+          path: omarchy
+          sparse-checkout: shell
+      - name: qmllint (informational - qs.* imports can't resolve outside a live Quickshell)
+        continue-on-error: true
+        run: qmllint -I omarchy/shell Workspaces.qml
+
+  qmlformat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.2"
+      - name: Check Workspaces.qml is formatted
+        run: |
+          qmlformat -i Workspaces.qml
+          git diff --exit-code -- Workspaces.qml

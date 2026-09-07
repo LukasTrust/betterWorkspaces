@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "better-workspaces",
+  "name": "Better Workspaces",
+  "version": "1.0.0",
+  "author": "LukasTrust",
+  "license": "MIT",
+  "description": "Workspace indicators that show a small icon for every window open in each workspace, using each app's installed icon with optional per-app overrides.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Workspaces.qml"
+  },
+  "barWidget": {
+    "displayName": "Better Workspaces",
+    "description": "Workspace numbers plus per-window app icons",
+    "category": "Compositor",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}
