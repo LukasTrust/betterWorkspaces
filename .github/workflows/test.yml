@@ -5,40 +5,26 @@ on:
   pull_request:
 
 jobs:
-  test:
+  logic:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - run: npm test
 
-  qmllint:
+  qml:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jurplel/install-qt-action@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: "6.11.2"
-      - name: Checkout Omarchy shell (for qs.* import path)
-        uses: actions/checkout@v4
-        with:
-          repository: basecamp/omarchy
-          path: omarchy
-          sparse-checkout: shell
-      - name: qmllint (informational - qs.* imports can't resolve outside a live Quickshell)
-        continue-on-error: true
-        run: qmllint -I omarchy/shell Workspaces.qml
-
-  qmlformat:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.11.2"
-      - name: Check Workspaces.qml is formatted
+      # Parses Workspaces.qml and checks it matches .qmlformat.ini. qmllint
+      # isn't run: qs.* only resolves inside a live Quickshell, so it can
+      # only ever be informational here.
+      - name: Workspaces.qml parses and is formatted
         run: |
           qmlformat -i Workspaces.qml
           git diff --exit-code -- Workspaces.qml
