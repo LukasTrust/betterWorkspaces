@@ -54,17 +54,23 @@ entry:
   "maxIcons": 5,           // icons shown per workspace before "+N" overflow
   "iconSize": 14,          // icon size in px
   "icons": {
-    // Override the icon for a window class/appId. Value can be either an
-    // icon-theme name or a literal glyph/emoji.
+    // Override the icon for a window class/appId, app name, title prefix, or regex.
+    // Value can be either an icon-theme name or a literal glyph/emoji.
     "firefox": "🦊",
     "code": "󰨞",
+    "discord": "omarchy-discord",      // web app / app name
+    "title:Discord": "omarchy-discord", // match window title substring
+    "/notion.*wiki/i": "notion",       // regex on window title
     "steam": ""
   }
 }
 ```
 
-Window class/appId matching is case-insensitive. To find a window's class,
-run `hyprctl clients` and look at its `class` field.
+Web apps launched in Google Chrome / Chromium (such as Discord, Notion, Basecamp,
+or WhatsApp Web) are automatically detected and matched against your installed
+`.desktop` entries and icon themes, so standalone web apps get their native
+icon without configuration. Window class/appId matching is case-insensitive.
+To find a window's class or title, run `hyprctl clients`.
 
 ## Testing
 
