@@ -21,8 +21,13 @@ TestCase {
 
   property int windowCounter: 0
 
+  FakeShell {
+    id: fakeShell
+  }
+
   FakeBar {
     id: fakeBar
+    shell: fakeShell
   }
 
   Component {
@@ -50,6 +55,7 @@ TestCase {
     DesktopEntries.testReset()
     Quickshell.testReset()
     fakeBar.testReset()
+    fakeShell.testReset()
   }
 
   // ---- fixtures -----------------------------------------------------------
@@ -61,7 +67,9 @@ TestCase {
       title: title || windowClass
     })
     return createTemporaryObject(toplevelComponent, testCase, {
-      address: "0x" + windowCounter.toString(16),
+      // No "0x" - that is how Quickshell reports an address, and the
+      // dispatch has to put it back for Hyprland to match anything.
+      address: windowCounter.toString(16),
       title: title || windowClass,
       wayland: wayland,
       lastIpcObject: {
@@ -124,6 +132,15 @@ TestCase {
 
   function iconSlot(widget, id, index) {
     return iconRepeater(widget, id).itemAt(index)
+  }
+
+  // What focusing one window looks like on the wire. Hyprland's own focus
+  // dispatcher, not the wlr activate request: measured on a live Hyprland,
+  // `wayland.activate()` marks the window active but leaves the focused
+  // workspace where it was, so an icon for a window on another workspace did
+  // nothing visible.
+  function focusRequest(window) {
+    return "hyprctl dispatch 'hl.dsp.focus({ window = \"address:0x" + window.address + "\" })'"
   }
 
   // ---- workspace list ---------------------------------------------------
@@ -269,6 +286,59 @@ TestCase {
     compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
   }
 
+  // Clicking the workspace you are already on has nothing to switch to, so
+  // it opens the overview instead - the one entry point that needs no setup.
+  function test_clickingTheWorkspaceYouAreOnOpensTheOverview() {
+    var focusedWorkspace = makeWorkspace(3)
+    Hyprland.workspaces.values = [focusedWorkspace]
+    Hyprland.focusedWorkspace = focusedWorkspace
+    var widget = createWidget()
+
+    mouseClick(cellFor(widget, 3))
+    compare(fakeShell.testToggled, [{
+      id: "better-workspaces",
+      payload: "{}"
+    }])
+    compare(fakeBar.testCommands, [])
+  }
+
+  function test_overviewEnabledOffLeavesTheClickAsAPlainSwitch() {
+    var focusedWorkspace = makeWorkspace(3)
+    Hyprland.workspaces.values = [focusedWorkspace]
+    Hyprland.focusedWorkspace = focusedWorkspace
+    var widget = createWidget({
+      overviewEnabled: false
+    })
+
+    mouseClick(cellFor(widget, 3))
+    compare(fakeShell.testToggled, [])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
+  }
+
+  // Only the workspace you are on; every other one still just switches.
+  function test_clickingAnotherWorkspaceNeverOpensTheOverview() {
+    var focusedWorkspace = makeWorkspace(3)
+    Hyprland.workspaces.values = [focusedWorkspace]
+    Hyprland.focusedWorkspace = focusedWorkspace
+    var widget = createWidget()
+
+    mouseClick(cellFor(widget, 1))
+    compare(fakeShell.testToggled, [])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"1\" })'"])
+  }
+
+  function test_clickingTheWorkspaceYouAreOnWithoutAShellDoesNothingRash() {
+    var focusedWorkspace = makeWorkspace(3)
+    Hyprland.workspaces.values = [focusedWorkspace]
+    Hyprland.focusedWorkspace = focusedWorkspace
+    fakeBar.shell = null
+    var widget = createWidget()
+
+    mouseClick(cellFor(widget, 3))
+    compare(fakeBar.testCommands, [])
+    fakeBar.shell = fakeShell
+  }
+
   function test_clickingTheLabelStillFocusesTheWorkspace() {
     Hyprland.workspaces.values = [makeWorkspace(3, [makeWindow("foot")])]
     var widget = createWidget()
@@ -330,20 +400,24 @@ TestCase {
     var widget = createWidget()
 
     mouseClick(iconSlot(widget, 1, 1))
-    compare(windows[0].wayland.testActivateCalls, 0)
-    compare(windows[1].wayland.testActivateCalls, 1)
+    compare(fakeBar.testCommands, [focusRequest(windows[1])])
     compare(windows[1].wayland.testCloseCalls, 0)
-    compare(fakeBar.testCommands, [])
+    // The wlr request is not used for this: it wouldn't switch workspace.
+    compare(windows[0].wayland.testActivateCalls, 0)
+    compare(windows[1].wayland.testActivateCalls, 0)
   }
 
-  function test_leftClickFallsBackToHyprctlDispatchWithoutAWaylandHandle() {
+  // A toplevel Hyprland has given no address can't be named to the
+  // dispatcher, so the wlr request is what is left.
+  function test_leftClickFallsBackToTheWlrRequestWithoutAnAddress() {
     var window = makeWindow("foot")
-    window.wayland = null
+    window.address = ""
     Hyprland.workspaces.values = [makeWorkspace(1, [window])]
     var widget = createWidget()
 
     mouseClick(iconSlot(widget, 1, 0))
-    compare(fakeBar.testCommands, ["hyprctl dispatch focuswindow 'address:" + window.address + "'"])
+    compare(window.wayland.testActivateCalls, 1)
+    compare(fakeBar.testCommands, [])
   }
 
   function test_middleClickingAnIconClosesExactlyThatWindow() {
@@ -358,11 +432,14 @@ TestCase {
   }
 
   function test_clickingAnIconDoesNotAlsoFocusTheWorkspace() {
-    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("foot")])]
+    var window = makeWindow("foot")
+    Hyprland.workspaces.values = [makeWorkspace(1, [window])]
     var widget = createWidget()
 
     mouseClick(iconSlot(widget, 1, 0))
-    compare(fakeBar.testCommands, [])
+    // The window, and only the window - not the cell's own workspace focus
+    // underneath it.
+    compare(fakeBar.testCommands, [focusRequest(window)])
   }
 
   // ---- window icons -------------------------------------------------------
@@ -718,8 +795,7 @@ TestCase {
     })
 
     mouseClick(iconSlot(widget, 1, 0))
-    compare(w0.wayland.testActivateCalls, 1)
-    compare(w1.wayland.testActivateCalls, 0)
+    compare(fakeBar.testCommands, [focusRequest(w0)])
   }
 
   function test_repeatedClicksOnAGroupCycleThroughItsWindows() {
@@ -737,19 +813,17 @@ TestCase {
     // each activation, one window at a time.
     w0.activated = true
     mouseClick(slot)
-    compare(w1.wayland.testActivateCalls, 1)
-    compare(w0.wayland.testActivateCalls, 0)
-    compare(w2.wayland.testActivateCalls, 0)
+    compare(fakeBar.testCommands, [focusRequest(w1)])
 
     w0.activated = false
     w1.activated = true
     mouseClick(slot)
-    compare(w2.wayland.testActivateCalls, 1)
+    compare(fakeBar.testCommands[1], focusRequest(w2))
 
     w1.activated = false
     w2.activated = true
     mouseClick(slot)
-    compare(w0.wayland.testActivateCalls, 1)
+    compare(fakeBar.testCommands[2], focusRequest(w0))
   }
 
   function test_clickingAGroupGoesToTheLastKnownFocusWhenNoneIsFocusedNow() {
@@ -767,8 +841,7 @@ TestCase {
     w1.activated = false
 
     mouseClick(slot)
-    compare(w1.wayland.testActivateCalls, 1)
-    compare(w0.wayland.testActivateCalls, 0)
+    compare(fakeBar.testCommands, [focusRequest(w1)])
   }
 
   function test_middleClickOnAGroupClosesTheFocusedWindow() {
@@ -856,7 +929,8 @@ TestCase {
       minWorkspaces: 5,
       hideEmpty: false,
       groupApps: false,
-      gameIcons: true
+      gameIcons: true,
+      overviewEnabled: true
     })
     compare(state.workspaces.map(workspace => workspace.id), [1, 2, 3, 4, 5, 10])
 

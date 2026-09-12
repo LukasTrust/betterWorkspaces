@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
@@ -7,13 +8,13 @@ import qs.Ui
 import "logic.js" as Logic
 
 // This plugin's summonable surface. One overlay serves every view; the
-// payload picks which one, so the planned overview can share it and reach
-// the settings from a gear button:
+// payload picks which one:
 //
+//   omarchy-shell shell toggle better-workspaces '{}'
 //   omarchy-shell shell toggle better-workspaces '{"view":"settings"}'
 //
-// Kept thin on purpose - the form itself lives in SettingsView.qml, which
-// has no window and so can be tested headless.
+// Kept thin on purpose - both views (SettingsView.qml, Overview.qml) have no
+// window of their own and so can be tested headless.
 Item {
   id: root
 
@@ -21,14 +22,38 @@ Item {
   property var manifest: null
 
   property bool opened: false
-  property string view: "settings"
+  // The view that owns the surface, and whether the settings card sits on
+  // top of it. Reaching the settings through the overview's gear keeps the
+  // overview underneath, because the settings change what it shows.
+  property string view: "overview"
+  property bool settingsOpen: false
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "better-workspaces"
   readonly property var widgetSettings: Logic.widgetSettingsFrom(root.shell ? root.shell.barConfig : null, root.pluginId)
 
   function open(payloadJson) {
-    root.view = Logic.parseOverlayPayload(payloadJson).view
+    var state = Logic.overlayState(payloadJson)
+    root.view = state.base
+    root.settingsOpen = state.settingsOpen
     root.opened = true
+    Qt.callLater(function () {
+      if (root.settingsOpen)
+        keyCatcher.forceActiveFocus()
+    })
+  }
+
+  // Escape, and a click past the card. From the settings reached through the
+  // overview it is a step back; anywhere else it is the way out.
+  function stepBack() {
+    if (Logic.overlayEscape(root.view, root.settingsOpen) === "back") {
+      root.settingsOpen = false
+      return
+    }
+    root.dismiss()
+  }
+
+  function openSettings() {
+    root.settingsOpen = true
     Qt.callLater(function () {
       keyCatcher.forceActiveFocus()
     })
@@ -36,10 +61,12 @@ Item {
 
   function close() {
     root.opened = false
+    root.settingsOpen = false
   }
 
   function dismiss() {
     root.opened = false
+    root.settingsOpen = false
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide(root.pluginId)
   }
@@ -51,9 +78,23 @@ Item {
       root.open("{}")
   }
 
+  // The screen Hyprland says has focus, so the overview opens where you are
+  // rather than on whichever monitor Quickshell happens to list first.
+  readonly property var focusedScreen: {
+    var monitor = Hyprland.focusedMonitor
+    if (!monitor)
+      return null
+    var screens = Quickshell.screens
+    for (var i = 0; i < screens.length; i++)
+      if (screens[i].name === monitor.name)
+        return screens[i]
+    return null
+  }
+
   PanelWindow {
     id: panel
     visible: root.opened
+    screen: root.focusedScreen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "better-workspaces"
@@ -67,25 +108,53 @@ Item {
       right: true
     }
 
+    // The overview fills the surface and brings its own keyboard handling
+    // and closing animation, so it is asked to close rather than dismissed
+    // outright - the cards shrink away before the surface goes. With the
+    // settings on top it stays on screen, previews and all, but suspended.
+    Overview {
+      objectName: "overviewView"
+      anchors.fill: parent
+      visible: root.view === "overview"
+      shell: root.shell
+      settings: root.widgetSettings
+      active: root.opened && root.view === "overview"
+      suspended: root.settingsOpen
+      onCloseRequested: root.dismiss()
+      onSettingsRequested: root.openSettings()
+    }
+
+    // Dims whatever the settings card sits on - the overview's cards, or
+    // nothing at all when they were summoned straight. Above the overview,
+    // so it dims that too; the overview brings its own backdrop for when it
+    // is on its own.
     Rectangle {
       anchors.fill: parent
+      visible: root.settingsOpen
       color: Color.menu.scrim
     }
 
+    // A click past the settings card. Only while they are showing: the
+    // overview has its own backdrop, so that clicking past its cards still
+    // plays the closing animation rather than cutting the surface away.
     MouseArea {
       anchors.fill: parent
-      onClicked: root.dismiss()
+      visible: root.settingsOpen
+      enabled: visible
+      onClicked: root.stepBack()
     }
 
     FocusScope {
       id: keyCatcher
       anchors.fill: parent
-      focus: true
-      Keys.onEscapePressed: root.dismiss()
+      focus: root.settingsOpen
+      visible: root.settingsOpen
+      Keys.onEscapePressed: root.stepBack()
     }
 
     BorderSurface {
       id: card
+      visible: root.settingsOpen
       anchors.centerIn: parent
       width: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
       radius: Style.cornerRadius
@@ -123,7 +192,7 @@ Item {
 
         SettingsView {
           objectName: "settingsView"
-          visible: root.view === "settings"
+          visible: root.settingsOpen
           width: content.width
           height: visible ? implicitHeight : 0
           shell: root.shell
@@ -134,7 +203,7 @@ Item {
         Text {
           objectName: "overlayHint"
           textFormat: Text.PlainText
-          text: "Changes apply immediately - Esc closes"
+          text: root.view === "overview" ? "Changes apply immediately - Esc goes back to the overview" : "Changes apply immediately - Esc closes"
           color: Color.menu.text
           opacity: 0.7
           font.family: Style.font.family

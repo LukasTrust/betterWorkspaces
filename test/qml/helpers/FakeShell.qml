@@ -16,6 +16,9 @@ QtObject {
   // { id, settings } of every updateEntryInline call, in order.
   property var testWrites: []
   property var testHidden: []
+  // { id, payload } of every summon/toggle, in order.
+  property var testSummoned: []
+  property var testToggled: []
 
   function updateEntryInline(id, settings) {
     api.testWrites = api.testWrites.concat([
@@ -33,10 +36,18 @@ QtObject {
   }
 
   function summon(id, payloadJson) {
+    api.testSummoned = api.testSummoned.concat([{
+      id: String(id || ""),
+      payload: String(payloadJson || "")
+    }])
     return true
   }
 
   function toggle(id, payloadJson) {
+    api.testToggled = api.testToggled.concat([{
+      id: String(id || ""),
+      payload: String(payloadJson || "")
+    }])
     return true
   }
 
@@ -63,6 +74,8 @@ QtObject {
   function testReset() {
     api.testWrites = []
     api.testHidden = []
+    api.testSummoned = []
+    api.testToggled = []
     api.barConfig = ({})
   }
 }

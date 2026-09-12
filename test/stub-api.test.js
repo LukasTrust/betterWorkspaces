@@ -91,6 +91,7 @@ const quickshellTypes = [
   ["Quickshell/Hyprland/HyprlandToplevel.qml", "Quickshell.Hyprland._Ipc/HyprlandToplevel"],
   ["Quickshell/Hyprland/HyprlandMonitor.qml", "Quickshell.Hyprland._Ipc/HyprlandMonitor"],
   ["Quickshell/Wayland/Toplevel.qml", "Quickshell.Wayland._ToplevelManagement/Toplevel"],
+  ["Quickshell/Wayland/ScreencopyView.qml", "Quickshell.Wayland._Screencopy/ScreencopyView"],
   ["Quickshell/Io/IpcHandler.qml", "Quickshell.Io/IpcHandler"]
 ]
 

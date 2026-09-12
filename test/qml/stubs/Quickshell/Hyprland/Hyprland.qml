@@ -22,6 +22,7 @@ QtObject {
 
   // dispatch() requests, in order.
   property var testDispatched: []
+  property int testToplevelRefreshes: 0
 
   function dispatch(request) {
     root.testDispatched = root.testDispatched.concat([String(request)])
@@ -35,6 +36,7 @@ QtObject {
   }
 
   function refreshToplevels() {
+    root.testToplevelRefreshes++
   }
 
   function refreshWorkspaces() {
@@ -48,5 +50,6 @@ QtObject {
     root.workspaces.values = []
     root.toplevels.values = []
     root.testDispatched = []
+    root.testToplevelRefreshes = 0
   }
 }

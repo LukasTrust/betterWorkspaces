@@ -27,7 +27,8 @@ windows of the same app (e.g. two terminals) never repeat the lookup.
 ## Using the icons
 
 - Hover an icon to see that window's title as a tooltip.
-- Left-click an icon to focus that exact window.
+- Left-click an icon to focus that exact window, switching workspace if it is
+  on another one.
 - Middle-click an icon to close that window.
 - Clicking the workspace number or anywhere else in the cell still just
   focuses the workspace, same as before.
@@ -38,6 +39,80 @@ click focuses the group's most recently focused window, and each further
 click steps to the next one. Middle-click closes the currently focused (or
 last-focused) window in the group. `maxIcons` and the `+N` overflow then
 count apps, not windows.
+
+## The overview
+
+Every workspace as a card, laid out to fill the screen, each showing its
+wallpaper with its windows drawn where they really sit on it. That is the
+whole view - the cards are large enough to recognise a window in, so there is
+nothing else to page through. A card is the shape of the screen its workspace
+is on, and every window carries its app icon in the corner, so a black
+terminal is still obviously a terminal.
+
+### Opening it
+
+Three ways, none of which touches your Hyprland bindings:
+
+- **Click the workspace you are already on** in the bar. Clicking any other
+  workspace still just switches to it, as before. This is the one that needs
+  no setup; `overviewEnabled` turns it back into a plain switch.
+- **A key of your own**, added to `~/.config/hypr/bindings.lua`. `SUPER + Q`
+  is free in a stock Omarchy:
+
+  ```lua
+  o.bind("SUPER + Q", "Workspace overview",
+    [[omarchy-shell shell toggle better-workspaces '{}']])
+  ```
+
+- **A touchpad gesture**, in `~/.config/hypr/input.lua` - for example a
+  three-finger swipe up:
+
+  ```lua
+  hl.gesture({ fingers = 3, direction = "up", action = function()
+    hl.dispatch(hl.dsp.exec_cmd("omarchy-shell shell toggle better-workspaces '{}'"))
+  end })
+  ```
+
+It opens on the monitor Hyprland says has focus. The same command closes it
+again, as do `Esc` and a click past the cards.
+
+### Using it
+
+- **Click a window** to go straight to it - the right workspace and the right
+  window in one - and the overview closes behind you.
+- **Click anywhere else on a card** to go to that workspace; the overview
+  closes too.
+- **Drag a window onto another card** to move it there. The focus stays where
+  it is, so you can keep rearranging. Dropping it back where it came from
+  does nothing.
+- **Drag a window onto the `+` card** to move it to a new workspace. `+`
+  always offers the one after the highest you have: a strip of 1-5 offers 6,
+  and one that already reaches 8 offers 9. The number under the card says
+  which one you are about to get.
+- **Drag the number under a card** onto another card to reorder workspaces.
+  Hyprland can't renumber a workspace, so this moves the windows instead:
+  dropping 5 onto 2 leaves 5's windows on 2, 2's on 3, and so on. Nothing is
+  renamed. The number is the handle rather than the card itself because a
+  busy workspace leaves no empty spot on its card to grab.
+- **Arrow keys or `hjkl`** walk the cards, **Enter** opens the selected one
+  (or makes the new one, on `+`), **Esc** closes.
+- **The gear in the top-right corner** opens the settings over the cards.
+  They stay on screen, previews and all, because most of the settings change
+  what the overview shows - `Esc` there goes back to them rather than closing
+  everything.
+
+### Previews
+
+Window previews come from the compositor's screencopy protocol, and only
+while the overview is actually open - closing it tears every capture down.
+Only the workspace you are on keeps updating; every other card takes a single
+frame and then stops. A window the compositor won't hand a frame for shows
+its app icon on a plain surface instead.
+
+Where a window sits comes from its `hyprctl clients` entry, which Hyprland
+can deliver later than the window itself, so the overview asks Hyprland for
+fresh geometry as it opens. That is a single request on the way in, not a
+poll.
 
 ## Install
 
@@ -74,7 +149,8 @@ settings are left behind beyond this widget's entry in `shell.json`.
 ### The edit view
 
 Every setting except the per-app `icons` overrides has a small editor of its
-own. Bind it to a key in `~/.config/hypr/bindings.lua`:
+own. The gear in the overview's top-right corner opens it, or bind it to a
+key of its own in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + SHIFT + ALT + Q", "Better Workspaces settings",
@@ -82,9 +158,12 @@ o.bind("SUPER + SHIFT + ALT + Q", "Better Workspaces settings",
 ```
 
 Changes apply as you make them and are written back to your `shell.json`
-entry; `Esc` or a click outside closes the view. Values outside the allowed
-range are pulled to the nearest one, and anything unusable falls back to the
-default.
+entry. Values outside the allowed range are pulled to the nearest one, and
+anything unusable falls back to the default.
+
+`Esc`, or a click outside the card, closes the editor - or, when you got
+there through the overview's gear, steps back to the overview so you can see
+what your change did.
 
 ### shell.json
 
@@ -101,6 +180,7 @@ entry:
   "hideEmpty": false,      // show only workspaces with windows in them
   "groupApps": false,      // one icon per app, with a count badge, instead of one per window
   "gameIcons": true,       // use a Proton game's own icon instead of the generic fallback
+  "overviewEnabled": true, // clicking the workspace you are on opens the overview
   "icons": {
     // Override the icon for a window class/appId. Value can be either an
     // icon-theme name or a literal glyph/emoji.
@@ -139,11 +219,12 @@ npm run test:e2e    # real windows on your live Hyprland session
   the stand-ins in `test/qml/stubs`, so it needs neither Hyprland nor
   Omarchy. Needs `qmltestrunner` (Arch: `qt6-declarative`).
 - **`npm run test:e2e`** opens real `foot` windows and checks what the
-  widget reports it shows. By default it runs the current checkout in a
-  throwaway Quickshell instance (real modules, no window, doesn't touch your
-  bar); `npm run test:e2e -- --live` asks the widget on your bar instead.
-  It briefly switches to a free workspace between 6 and 10 - don't type
-  while it runs. Needs `foot` and `jq`.
+  widget reports it shows, and that the requests the overview sends really do
+  move windows between workspaces on a running Hyprland. By default it runs
+  the current checkout in a throwaway Quickshell instance (real modules, no
+  window, doesn't touch your bar); `npm run test:e2e -- --live` asks the
+  widget on your bar instead. It briefly switches to free workspaces between
+  6 and 10 - don't type while it runs. Needs `foot` and `jq`.
 
 The widget reports what it's showing as JSON, which is what the end-to-end
 tests read:
@@ -156,7 +237,7 @@ Before publishing a change, also validate the plugin the way Omarchy does:
 
 ```bash
 omarchy plugin validate .
-qmllint -I "$OMARCHY_PATH/shell" Workspaces.qml
+qmllint -I "$OMARCHY_PATH/shell" *.qml
 ```
 
 ## License

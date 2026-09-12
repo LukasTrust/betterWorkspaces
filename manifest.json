@@ -26,7 +26,8 @@
       "minWorkspaces": 5,
       "hideEmpty": false,
       "groupApps": false,
-      "gameIcons": true
+      "gameIcons": true,
+      "overviewEnabled": true
     }
   }
 }

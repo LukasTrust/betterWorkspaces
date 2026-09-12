@@ -35,6 +35,7 @@ failed=0
 pids=()
 original_ws=""
 ws=""
+ws2=""
 probe_dir=""
 probe_pid=""
 
@@ -156,9 +157,13 @@ fi
 # coming and going.
 existing=$(hyprctl workspaces -j | jq -c '[.[].id]')
 for candidate in 10 9 8 7 6; do
-  if jq -e --argjson id "$candidate" 'index($id) == null' <<<"$existing" >/dev/null; then
+  jq -e --argjson id "$candidate" 'index($id) == null' <<<"$existing" >/dev/null || continue
+  if [[ -z $ws ]]; then
     ws=$candidate
-    break
+  elif [[ -z $ws2 ]]; then
+    # A second free workspace, for the reorder check at the end. Not fatal
+    # if there isn't one - that check is skipped instead.
+    ws2=$candidate
   fi
 done
 [[ -n $ws ]] || {
@@ -199,6 +204,102 @@ for pid in "${pids[@]}"; do
 done
 pids=()
 expect "workspace $ws disappears once empty again" '[.workspaces[].id] | index($ws) == null'
+
+# ---- reordering two workspaces ---------------------------------------------
+#
+# Dragging one workspace card onto another can't be driven from a shell
+# script, but what it ends up asking Hyprland for can: these two dispatches
+# are exactly what the overview sends for that drag, with the addresses of
+# real windows filled in. Nothing below the running compositor can tell you
+# whether this dispatcher form really moves a window that was never focused,
+# and leaves the focus alone while doing it - which is the whole point of
+# checking it here.
+address_of() {
+  hyprctl clients -j | jq -r --arg class "$1" 'first(.[] | select(.class == $class) | .address) // ""'
+}
+
+# The address as the plugin actually has it: Quickshell reports it without
+# the "0x" that Hyprland's `address:` selector needs. That difference is
+# invisible from inside the plugin - Hyprland answers "ok" to a selector
+# that matches nothing and quietly does nothing - so it can only be caught
+# here, against a real compositor.
+widget_address_of() {
+  state | jq -r --arg class "$1" 'first(.workspaces[].icons[] | select(.key == $class) | .address) // ""'
+}
+
+move_request() { # <address as quickshell reports it> <workspace>
+  printf 'hl.dsp.window.move({ workspace = "%s", window = "address:0x%s", follow = false })' "$2" "${1#0x}"
+}
+
+# A window lands on whichever workspace is focused when it maps, not when it
+# was launched, so each one has to be there before switching away again.
+wait_for_window() {
+  local deadline=$((SECONDS + TIMEOUT_S))
+  until [[ -n $(address_of "$1") ]]; do
+    ((SECONDS < deadline)) || return 1
+    sleep 0.2
+  done
+}
+
+if [[ -z $ws2 ]]; then
+  echo "  skip  reordering: needs a second free workspace between 6 and 10"
+else
+  focus_workspace "$ws"
+  open_window "$PREFIX-swap-a"
+  wait_for_window "$PREFIX-swap-a" || not_ok "reorder window a opened" "it never appeared"
+  focus_workspace "$ws2"
+  open_window "$PREFIX-swap-b"
+  wait_for_window "$PREFIX-swap-b" || not_ok "reorder window b opened" "it never appeared"
+  focus_workspace "$original_ws"
+
+  expect "both reorder workspaces have their window" \
+    "(.workspaces[] | select(.id == \$ws) | any(.icons[]; .key == \"$PREFIX-swap-a\"))
+     and (.workspaces[] | select(.id == $ws2) | any(.icons[]; .key == \"$PREFIX-swap-b\"))"
+
+  swap_a=$(widget_address_of "$PREFIX-swap-a")
+  swap_b=$(widget_address_of "$PREFIX-swap-b")
+  if [[ -z $swap_a || -z $swap_b ]]; then
+    not_ok "reordering swaps the two workspaces' windows" "the widget didn't report the test windows"
+  else
+    # First the trap: the address exactly as the plugin holds it. Hyprland
+    # accepts this and moves nothing, so a plugin that forgets the "0x"
+    # looks like it works and doesn't.
+    hyprctl dispatch "hl.dsp.window.move({ workspace = \"$ws2\", window = \"address:${swap_a#0x}\", follow = false })" >/dev/null
+    sleep 0.5
+    expect "an address without the 0x prefix moves nothing" \
+      "(.workspaces[] | select(.id == \$ws) | any(.icons[]; .key == \"$PREFIX-swap-a\"))"
+
+    # Focusing a window by address has to take you to the workspace it is
+    # on. The wlr activate request Quickshell also offers does not - it marks
+    # the window active and leaves the focused workspace alone - and no test
+    # below a real compositor can tell the two apart.
+    focus_request() { printf 'hl.dsp.focus({ window = "address:0x%s" })' "${1#0x}"; }
+    hyprctl dispatch "$(focus_request "$swap_a")" >/dev/null
+    sleep 0.5
+    if [[ $(hyprctl activeworkspace -j | jq '.id') == "$ws" ]]; then
+      ok "focusing a window by address switches to its workspace"
+    else
+      not_ok "focusing a window by address switches to its workspace" \
+        "still on workspace $(hyprctl activeworkspace -j | jq '.id'), wanted $ws"
+    fi
+    focus_workspace "$original_ws"
+
+    hyprctl dispatch "$(move_request "$swap_b" "$ws")" >/dev/null
+    hyprctl dispatch "$(move_request "$swap_a" "$ws2")" >/dev/null
+
+    expect "reordering swaps the two workspaces' windows" \
+      "(.workspaces[] | select(.id == \$ws) | any(.icons[]; .key == \"$PREFIX-swap-b\"))
+       and (.workspaces[] | select(.id == $ws2) | any(.icons[]; .key == \"$PREFIX-swap-a\"))"
+    expect "reordering leaves nothing behind on either workspace" \
+      "(.workspaces[] | select(.id == \$ws) | .windows == 1)
+       and (.workspaces[] | select(.id == $ws2) | .windows == 1)"
+  fi
+
+  for pid in "${pids[@]}"; do
+    close_window "$pid"
+  done
+  pids=()
+fi
 
 echo
 echo "$passed passed, $failed failed"

@@ -73,6 +73,32 @@ BarWidget {
     root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
+  // Clicking a workspace you are not on switches to it; clicking the one you
+  // are already on has nothing to switch to, so it opens the overview
+  // instead. That second click is the only entry point that needs no setup
+  // at all - the key binding is the user's to add - which is why
+  // `overviewEnabled` turns this back into a plain switch rather than
+  // removing the overview itself.
+  function activateWorkspace(id) {
+    var alreadyThere = Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === id
+    if (alreadyThere && root.overviewEnabled) {
+      root.openOverview()
+      return
+    }
+    root.focusWorkspace(id)
+  }
+
+  // The same summon the documented key binding sends, so both entry points
+  // land on exactly one overlay: asking a second time while it is open
+  // closes it again.
+  // The scoped shell facade reaches this widget through the bar host, which
+  // is also the only thing that knows this plugin's id.
+  function openOverview() {
+    var shell = root.bar ? root.bar.shell : null
+    if (shell && typeof shell.toggle === "function")
+      shell.toggle(root.moduleName, "{}")
+  }
+
   // ---- per-window interaction -------------------------------------------
 
   function windowTitle(toplevel) {
@@ -81,22 +107,27 @@ BarWidget {
     return String(toplevel.title || (toplevel.wayland ? toplevel.wayland.title : "") || "")
   }
 
-  // The foreign-toplevel activate request is what every other widget uses
-  // (ActiveWindow, Tray) and works even across monitors. It can be missing
-  // for a toplevel Hyprland hasn't matched to a wlr handle yet, so fall back
-  // to Hyprland's own dispatcher by address - this is the classic
-  // `hyprctl dispatch focuswindow` selector, not the Lua `hl.dsp` table,
-  // since there is no confirmed Lua equivalent for focusing by address.
+  // Hyprland's own focus dispatcher, naming the window by address - not the
+  // foreign-toplevel activate request the other widgets use. Measured on a
+  // live Hyprland: `wayland.activate()` marks the window active but leaves
+  // the focused workspace where it was, so clicking the icon of a window on
+  // another workspace did nothing you could see. The dispatcher switches.
+  //
+  // Omarchy configures Hyprland in Lua, where a dispatch is evaluated as
+  // Lua, so this is the `hl.dsp` form: the classic `focuswindow address:...`
+  // selector is a syntax error there rather than a focus. The selector comes
+  // from logic.js, because Quickshell reports an address without the `0x`
+  // Hyprland wants and one missing it matches nothing while still saying
+  // "ok". The wlr request is the fallback for a toplevel with no address.
   function activateWindow(toplevel) {
     if (!toplevel)
       return
-    if (toplevel.wayland && typeof toplevel.wayland.activate === "function") {
-      toplevel.wayland.activate()
+    if (root.bar && toplevel.address) {
+      root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ window = \"" + Logic.windowSelector(toplevel.address) + "\" })"))
       return
     }
-    if (!root.bar || !toplevel.address)
-      return
-    root.bar.run("hyprctl dispatch focuswindow " + Util.shellQuote("address:" + toplevel.address))
+    if (toplevel.wayland && typeof toplevel.wayland.activate === "function")
+      toplevel.wayland.activate()
   }
 
   function closeWindow(toplevel) {
@@ -132,116 +163,37 @@ BarWidget {
     return null
   }
 
-  // ---- icon resolution --------------------------------------------------
+  // ---- settings -----------------------------------------------------------
   //
-  // Icon source, in order: a user override from this widget's shell.json
-  // entry, then (with `gameIcons` on) a Steam game's own icon, then the
-  // icon of the installed app whose desktop entry best matches the window's
-  // class, then a generic executable icon. Resolved icons are cached by
-  // window class (not per-window), so opening a second terminal or a second
-  // browser window never repeats the lookup.
-
   // Ranges and fallbacks live in logic.js (SETTING_FIELDS), so the edit view
   // and this clamping can't drift apart.
+
   readonly property int maxIcons: Logic.clampSetting("maxIcons", setting("maxIcons", null))
   readonly property int iconSize: Logic.clampSetting("iconSize", setting("iconSize", null))
   readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", setting("minWorkspaces", null))
   readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", setting("hideEmpty", null))
   readonly property bool groupApps: Logic.clampSetting("groupApps", setting("groupApps", null))
   readonly property bool gameIcons: Logic.clampSetting("gameIcons", setting("gameIcons", null))
+  readonly property bool overviewEnabled: Logic.clampSetting("overviewEnabled", setting("overviewEnabled", null))
 
-  property var _iconCache: ({})
+  // ---- icon resolution ----------------------------------------------------
+  //
+  // Shared with the overview so both show the same icon for the same window;
+  // see IconResolver.qml for the lookup order and the per-class cache.
 
-  function clearIconCache() {
-    root._iconCache = ({})
+  IconResolver {
+    id: iconResolver
+    objectName: "iconResolver"
+    settings: root.settings
+    gameIcons: root.gameIcons
   }
 
-  // The user's app list can change (installs/uninstalls); drop the cache so
-  // affected windows re-resolve instead of keeping a stale fallback icon.
-  Connections {
-    target: DesktopEntries
-    function onApplicationsChanged() {
-      root.clearIconCache()
-    }
-  }
-
-  // shell.json edits (e.g. to the "icons" overrides) hot-reload into
-  // `settings` - drop the cache so they take effect immediately.
-  onSettingsChanged: root.clearIconCache()
-
-  // Hyprland's own "class" (from hyprctl) is preferred over the wlr-toplevel
-  // appId: some XWayland apps report an empty wayland appId while hyprctl
-  // still reports a class, and this is what icon overrides are keyed by.
   function windowKey(toplevel) {
-    if (!toplevel)
-      return ""
-    var ipc = toplevel.lastIpcObject || {}
-    return Logic.computeWindowKey(ipc.class, ipc.initialClass, toplevel.wayland ? toplevel.wayland.appId : "")
-  }
-
-  // Turns a raw icon value (a user override or a DesktopEntry.icon) into
-  // either a themed/file image source, or - if it doesn't resolve to an
-  // icon-theme entry - plain text. This lets a user override with either an
-  // icon-theme name or a literal glyph/emoji in shell.json.
-  function classifyIconValue(value) {
-    return Logic.classifyIconValue(value, function (name) {
-      return Quickshell.iconPath(name, true)
-    })
-  }
-
-  // Reads this widget's "icons" map from its shell.json layout entry, e.g.:
-  //   { "id": "better-workspaces", "icons": { "firefox": "󰍬" } }
-  function userIconOverride(key) {
-    var overrides = root.settings ? root.settings.icons : null
-    return Logic.lookupIconOverride(overrides, key)
-  }
-
-  readonly property var fallbackIcon: ({
-      kind: "image",
-      source: Quickshell.iconPath("application-x-executable", true)
-    })
-
-  // Steam installs a "steam_icon_<appid>" icon-theme entry for every game in
-  // the library, so a Steam window's own icon is one theme lookup away once
-  // its appid is pulled out of the class - no desktop-entry match needed and
-  // nothing to guess. Returns null (rather than a text fallback) when the
-  // class isn't a Steam window or the icon isn't installed, so the caller
-  // falls through to the desktop-entry lookup instead of showing a raw name.
-  function steamIcon(key) {
-    var appId = Logic.steamAppId(key)
-    if (!appId)
-      return null
-    var themed = Quickshell.iconPath("steam_icon_" + appId, true)
-    return themed.length > 0 ? { kind: "image", source: themed } : null
+    return iconResolver.windowKey(toplevel)
   }
 
   function iconForWindow(toplevel) {
-    var key = root.windowKey(toplevel)
-    if (key.length === 0)
-      return root.fallbackIcon
-
-    var cacheKey = key.toLowerCase()
-    var cached = root._iconCache[cacheKey]
-    if (cached !== undefined)
-      return cached
-
-    var resolved = root.classifyIconValue(root.userIconOverride(key))
-    if (!resolved && root.gameIcons)
-      resolved = root.steamIcon(key)
-    if (!resolved) {
-      // An exact desktop-id match (e.g. window class "zen" -> zen.desktop)
-      // beats the fuzzy heuristic: heuristicLookup scores by name/exec
-      // similarity and can under-match a short, generic-looking class like
-      // "zen" even though the id match is exact and free.
-      var entry = DesktopEntries.byId(key) || DesktopEntries.heuristicLookup(key)
-      if (entry && entry.icon)
-        resolved = root.classifyIconValue(entry.icon)
-    }
-    if (!resolved)
-      resolved = root.fallbackIcon
-
-    root._iconCache[cacheKey] = resolved
-    return resolved
+    return iconResolver.iconFor(toplevel)
   }
 
   // ---- introspection ------------------------------------------------------
@@ -290,7 +242,8 @@ BarWidget {
         minWorkspaces: root.minWorkspaces,
         hideEmpty: root.hideEmpty,
         groupApps: root.groupApps,
-        gameIcons: root.gameIcons
+        gameIcons: root.gameIcons,
+        overviewEnabled: root.overviewEnabled
       },
       workspaces: workspaces
     }
@@ -368,7 +321,7 @@ BarWidget {
           objectName: "workspaceMouseArea"
           anchors.fill: parent
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.focusWorkspace(cell.modelData)
+          onClicked: root.activateWorkspace(cell.modelData)
         }
 
         GridLayout {

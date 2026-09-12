@@ -17,6 +17,9 @@ QtObject {
   property int barSize: 26
   property bool transparent: false
   property bool foregroundAnimationEnabled: true
+  // The scoped shell facade the bar host hands each plugin widget; a
+  // FakeShell in the tests that need one.
+  property var shell: null
 
   // run() commands, in order.
   property var testCommands: []
