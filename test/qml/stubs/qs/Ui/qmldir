@@ -1,3 +1,4 @@
 module qs.Ui
 BarWidget 1.0 BarWidget.qml
 NumberField 1.0 NumberField.qml
+ToggleSwitch 1.0 ToggleSwitch.qml

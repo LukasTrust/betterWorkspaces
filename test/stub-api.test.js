@@ -117,7 +117,8 @@ const qmlFileTypes = [
   [path.join(stubsDir, "qs/Ui/BarWidget.qml"), path.join(omarchyShellDir, "Ui/BarWidget.qml")],
   [path.join(helpersDir, "FakeBar.qml"), path.join(omarchyShellDir, "Ui/PluginBarApi.qml")],
   [path.join(helpersDir, "FakeShell.qml"), path.join(omarchyShellDir, "services/PluginShellApi.qml")],
-  [path.join(stubsDir, "qs/Ui/NumberField.qml"), path.join(omarchyShellDir, "Ui/NumberField.qml")]
+  [path.join(stubsDir, "qs/Ui/NumberField.qml"), path.join(omarchyShellDir, "Ui/NumberField.qml")],
+  [path.join(stubsDir, "qs/Ui/ToggleSwitch.qml"), path.join(omarchyShellDir, "Ui/ToggleSwitch.qml")]
 ]
 
 for (const [stubFile, realFile] of qmlFileTypes) {

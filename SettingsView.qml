@@ -18,17 +18,13 @@ Item {
   // The widget's current shell.json entry, without its id.
   property var settings: ({})
 
-  signal settingChanged(string key, int value)
+  signal settingChanged(string key, var value)
 
   implicitWidth: layout.implicitWidth
   implicitHeight: layout.implicitHeight
 
   function valueOf(key) {
     return Logic.settingValue(root.settings, key)
-  }
-
-  function boundsOf(key) {
-    return Logic.SETTING_BOUNDS[key]
   }
 
   function change(key, value) {
@@ -54,7 +50,6 @@ Item {
       RowLayout {
         id: row
         required property var modelData
-        readonly property var bounds: root.boundsOf(modelData.key)
 
         objectName: "field-" + modelData.key
         Layout.fillWidth: true
@@ -86,18 +81,41 @@ Item {
           }
         }
 
-        NumberField {
-          objectName: "fieldInput"
-          Layout.alignment: Qt.AlignVCenter
-          Layout.preferredWidth: Style.spacing.numberFieldWidth
-          value: root.valueOf(row.modelData.key)
-          from: row.bounds.min
-          to: row.bounds.max
-          stepSize: 1
-          foreground: Color.menu.text
-          onModified: function (value) {
-            root.change(row.modelData.key, value)
+        // One control per setting type, picked by the field. Both are
+        // declared here so they can read the row's own `modelData`.
+        Component {
+          id: numberControl
+
+          NumberField {
+            objectName: "fieldInput"
+            value: root.valueOf(row.modelData.key)
+            from: row.modelData.min
+            to: row.modelData.max
+            stepSize: 1
+            foreground: Color.menu.text
+            onModified: function (value) {
+              root.change(row.modelData.key, value)
+            }
           }
+        }
+
+        Component {
+          id: switchControl
+
+          ToggleSwitch {
+            objectName: "fieldInput"
+            checked: root.valueOf(row.modelData.key)
+            foreground: Color.menu.text
+            onToggled: root.change(row.modelData.key, !checked)
+          }
+        }
+
+        Loader {
+          readonly property bool isSwitch: row.modelData.type === "boolean"
+
+          Layout.alignment: Qt.AlignVCenter
+          Layout.preferredWidth: isSwitch ? implicitWidth : Style.spacing.numberFieldWidth
+          sourceComponent: isSwitch ? switchControl : numberControl
         }
       }
     }

@@ -72,10 +72,18 @@ TestCase {
 
   function test_showsOneFieldPerSetting() {
     var view = createView()
-    compare(findChild(view, "fieldRepeater").count, 2)
+    var keys = ["maxIcons", "iconSize", "minWorkspaces", "hideEmpty"]
+    compare(findChild(view, "fieldRepeater").count, keys.length)
+
+    for (var i = 0; i < keys.length; i++) {
+      var field = findChild(view, "field-" + keys[i])
+      verify(field !== null, keys[i] + " has no field")
+      verify(findChild(field, "fieldLabel").text.length > 0, keys[i] + ": no label")
+      verify(findChild(field, "fieldDescription").text.length > 0, keys[i] + ": no description")
+      verify(fieldInput(view, keys[i]) !== null, keys[i] + ": no control")
+    }
     compare(findChild(findChild(view, "field-maxIcons"), "fieldLabel").text, "Icons per workspace")
     compare(findChild(findChild(view, "field-iconSize"), "fieldLabel").text, "Icon size")
-    verify(findChild(findChild(view, "field-maxIcons"), "fieldDescription").text.length > 0)
   }
 
   function test_fieldsOfferExactlyTheAllowedRange() {
@@ -84,6 +92,55 @@ TestCase {
     compare(fieldInput(view, "maxIcons").to, 10)
     compare(fieldInput(view, "iconSize").from, 8)
     compare(fieldInput(view, "iconSize").to, 32)
+    compare(fieldInput(view, "minWorkspaces").from, 0)
+    compare(fieldInput(view, "minWorkspaces").to, 10)
+  }
+
+  // A boolean setting gets a switch rather than a number field.
+  function test_showsBooleanSettingsAsASwitch() {
+    var view = createView({
+      hideEmpty: true
+    })
+    var input = fieldInput(view, "hideEmpty")
+    compare(input.checked, true)
+    verify(input.from === undefined, "hideEmpty should not be a number field")
+    compare(fieldInput(view, "maxIcons").checked, undefined)
+  }
+
+  function test_flippingASwitchWritesTheEntryBack() {
+    var view = createView({
+      maxIcons: 3
+    })
+    compare(fieldInput(view, "hideEmpty").checked, false)
+
+    fieldInput(view, "hideEmpty").testToggle()
+    compare(fakeShell.testWrites.length, 1)
+    compare(fakeShell.testWrites[0].settings, {
+      maxIcons: 3,
+      hideEmpty: true
+    })
+    compare(fieldInput(view, "hideEmpty").checked, true)
+
+    fieldInput(view, "hideEmpty").testToggle()
+    compare(fakeShell.testWrites[1].settings.hideEmpty, false)
+    compare(fieldInput(view, "hideEmpty").checked, false)
+  }
+
+  function test_showsAnUnusableBooleanAsTheValueTheWidgetUses() {
+    var view = createView({
+      hideEmpty: "nonsense"
+    })
+    compare(fieldInput(view, "hideEmpty").checked, false)
+  }
+
+  function test_flippingASwitchReportsTheChange() {
+    var view = createView()
+    changedSpy.target = view
+    fieldInput(view, "hideEmpty").testToggle()
+
+    compare(changedSpy.count, 1)
+    compare(changedSpy.signalArguments[0][0], "hideEmpty")
+    compare(changedSpy.signalArguments[0][1], true)
   }
 
   // How Overlay.qml places the form: in a column that takes its height from
@@ -95,7 +152,7 @@ TestCase {
     var view = card.view
 
     var first = findChild(view, "field-maxIcons")
-    var second = findChild(view, "field-iconSize")
+    var second = findChild(view, "field-hideEmpty")
     verify(view.height > 0, "form reports no height")
     verify(first.height > 0, "row has no height")
     verify(second.y >= first.y + first.height, "rows overlap each other")

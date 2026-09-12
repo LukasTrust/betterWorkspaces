@@ -9,7 +9,7 @@ const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const path = require("node:path")
 
-const { SETTING_BOUNDS, SETTING_FIELDS } = require("../logic.js")
+const { SETTING_DEFAULTS } = require("../logic.js")
 
 const root = path.join(__dirname, "..")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"))
@@ -32,6 +32,5 @@ test("settings are edited in the plugin's own view, not the Setup menu", () => {
 })
 
 test("a fresh entry starts on the defaults the widget clamps to", () => {
-  const expected = Object.fromEntries(SETTING_FIELDS.map(field => [field.key, SETTING_BOUNDS[field.key].fallback]))
-  assert.deepEqual(barWidget.defaults, expected)
+  assert.deepEqual(barWidget.defaults, SETTING_DEFAULTS)
 })

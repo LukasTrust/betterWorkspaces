@@ -31,12 +31,40 @@ BarWidget {
     return null
   }
 
-  function workspaceIds() {
+  // What Hyprland currently has, in the shape logic.js works on. Reading
+  // each workspace's windows here is what lets `hideEmpty` follow windows
+  // opening and closing without any polling: the binding below depends on
+  // everything this touches and re-runs when any of it changes.
+  function workspaceModel() {
     var values = Hyprland.workspaces.values
-    var existing = []
-    for (var i = 0; i < values.length; i++)
-      existing.push(values[i].id)
-    return Logic.computeWorkspaceIds(existing)
+    var model = []
+    for (var i = 0; i < values.length; i++) {
+      var workspace = values[i]
+      if (!workspace || !workspace.toplevels)
+        continue
+      model.push({
+        id: workspace.id,
+        occupied: workspace.toplevels.values.length > 0
+      })
+    }
+    return model
+  }
+
+  readonly property var candidateWorkspaceIds: Logic.computeWorkspaceIds(root.workspaceModel(), {
+    minWorkspaces: root.minWorkspaces,
+    hideEmpty: root.hideEmpty,
+    focusedId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0
+  })
+
+  // The ids actually rendered. Changing this list rebuilds every cell, so it
+  // only changes when the ids really differ: with `hideEmpty` on, the
+  // binding above re-runs for every window that opens or closes, and most of
+  // those leave the strip exactly as it was.
+  property var workspaceIds: []
+
+  onCandidateWorkspaceIdsChanged: {
+    if (!Logic.sameIds(root.candidateWorkspaceIds, root.workspaceIds))
+      root.workspaceIds = root.candidateWorkspaceIds
   }
 
   function focusWorkspace(id) {
@@ -53,10 +81,12 @@ BarWidget {
   // icons are cached by window class (not per-window), so opening a second
   // terminal or a second browser window never repeats the lookup.
 
-  // Ranges and fallbacks live in logic.js, so the Setup menu's sliders
-  // (manifest.json) and this clamping can't drift apart.
+  // Ranges and fallbacks live in logic.js (SETTING_FIELDS), so the edit view
+  // and this clamping can't drift apart.
   readonly property int maxIcons: Logic.clampSetting("maxIcons", setting("maxIcons", null))
   readonly property int iconSize: Logic.clampSetting("iconSize", setting("iconSize", null))
+  readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", setting("minWorkspaces", null))
+  readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", setting("hideEmpty", null))
 
   property var _iconCache: ({})
 
@@ -177,7 +207,9 @@ BarWidget {
     return {
       settings: {
         maxIcons: root.maxIcons,
-        iconSize: root.iconSize
+        iconSize: root.iconSize,
+        minWorkspaces: root.minWorkspaces,
+        hideEmpty: root.hideEmpty
       },
       workspaces: workspaces
     }
@@ -204,14 +236,14 @@ BarWidget {
     objectName: "workspaceGrid"
     anchors.fill: parent
     anchors.rightMargin: root.trailingGap
-    columns: root.vertical ? 1 : root.workspaceIds().length
+    columns: root.vertical ? 1 : Math.max(1, root.workspaceIds.length)
     columnSpacing: root.vertical ? 0 : Style.space(2)
     rowSpacing: root.vertical ? Style.space(2) : 0
 
     Repeater {
       id: workspaceRepeater
       objectName: "workspaceRepeater"
-      model: root.workspaceIds()
+      model: root.workspaceIds
 
       Item {
         id: cell

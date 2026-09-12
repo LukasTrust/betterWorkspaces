@@ -133,6 +133,96 @@ TestCase {
     compare(shownIds(widget), [1, 2, 3, 4, 5])
   }
 
+  // ---- how many workspaces are shown ------------------------------------
+
+  function test_showsAsManyEmptyWorkspacesAsMinWorkspaces_data() {
+    return [
+      { tag: "none", minWorkspaces: 0, expected: [7] },
+      { tag: "one", minWorkspaces: 1, expected: [1, 7] },
+      { tag: "all ten", minWorkspaces: 10, expected: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+      { tag: "unusable", minWorkspaces: "abc", expected: [1, 2, 3, 4, 5, 7] }
+    ]
+  }
+
+  function test_showsAsManyEmptyWorkspacesAsMinWorkspaces(data) {
+    Hyprland.workspaces.values = [makeWorkspace(7, [makeWindow("foot")])]
+    var widget = createWidget({
+      minWorkspaces: data.minWorkspaces
+    })
+    compare(shownIds(widget), data.expected)
+    compare(findChild(widget, "workspaceRepeater").count, data.expected.length)
+  }
+
+  function test_followsAnEditedMinWorkspaces() {
+    var widget = createWidget({
+      minWorkspaces: 2
+    })
+    compare(shownIds(widget), [1, 2])
+
+    widget.settings = {
+      minWorkspaces: 4
+    }
+    compare(shownIds(widget), [1, 2, 3, 4])
+  }
+
+  function test_hideEmptyShowsOnlyWorkspacesWithWindows() {
+    Hyprland.workspaces.values = [makeWorkspace(2), makeWorkspace(4, [makeWindow("foot")])]
+    var widget = createWidget({
+      hideEmpty: true,
+      minWorkspaces: 10
+    })
+    compare(shownIds(widget), [4])
+  }
+
+  function test_hideEmptyKeepsTheWorkspaceYouAreOn() {
+    var empty = makeWorkspace(2)
+    Hyprland.workspaces.values = [empty, makeWorkspace(4, [makeWindow("foot")])]
+    Hyprland.focusedWorkspace = empty
+    var widget = createWidget({
+      hideEmpty: true
+    })
+    compare(shownIds(widget), [2, 4])
+  }
+
+  function test_hideEmptyFollowsWindowsOpeningAndClosing() {
+    var workspace = makeWorkspace(3)
+    Hyprland.workspaces.values = [workspace]
+    var widget = createWidget({
+      hideEmpty: true
+    })
+    compare(shownIds(widget), [])
+
+    workspace.toplevels.values = [makeWindow("foot")]
+    compare(shownIds(widget), [3])
+
+    workspace.toplevels.values = []
+    compare(shownIds(widget), [])
+  }
+
+  // The cells are rebuilt whenever the list of ids changes, which with
+  // hideEmpty on would otherwise happen on every window that opens.
+  function test_keepsItsCellsWhenTheWorkspacesAreUnchanged() {
+    var workspace = makeWorkspace(3, [makeWindow("foot")])
+    Hyprland.workspaces.values = [workspace]
+    var widget = createWidget({
+      hideEmpty: true
+    })
+
+    var cell = cellFor(widget, 3)
+    workspace.toplevels.values = workspace.toplevels.values.concat([makeWindow("firefox")])
+    compare(shownIds(widget), [3])
+    compare(cellFor(widget, 3), cell)
+    compare(iconRepeater(widget, 3).count, 2)
+  }
+
+  function test_showsNoWorkspacesAtAllWithoutBreakingTheLayout() {
+    var widget = createWidget({
+      minWorkspaces: 0
+    })
+    compare(shownIds(widget), [])
+    compare(findChild(widget, "workspaceGrid").columns, 1)
+  }
+
   function test_showsOccupiedWorkspacesAboveFive() {
     Hyprland.workspaces.values = [makeWorkspace(7, [makeWindow("foot")]), makeWorkspace(2)]
     var widget = createWidget()
@@ -414,7 +504,9 @@ TestCase {
 
     compare(state.settings, {
       maxIcons: 1,
-      iconSize: 14
+      iconSize: 14,
+      minWorkspaces: 5,
+      hideEmpty: false
     })
     compare(state.workspaces.map(workspace => workspace.id), [1, 2, 3, 4, 5, 10])
 
@@ -435,6 +527,16 @@ TestCase {
     compare(one.occupied, false)
     compare(one.icons, [])
     compare(state.workspaces[5].label, "0")
+  }
+
+  function test_stateReportsTheWorkspaceSettings() {
+    var state = stateOf(createWidget({
+      minWorkspaces: 2,
+      hideEmpty: "true"
+    }))
+    compare(state.settings.minWorkspaces, 2)
+    compare(state.settings.hideEmpty, true)
+    compare(state.workspaces, [])
   }
 
   function test_stateFollowsWorkspaceChanges() {

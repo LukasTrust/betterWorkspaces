@@ -3,16 +3,51 @@
 // Quickshell singletons (Quickshell.iconPath, DesktopEntries, Hyprland) stays
 // in the QML file and is passed in here as plain data or a callback.
 
-function computeWorkspaceIds(existingIds) {
-  var ids = [1, 2, 3, 4, 5]
+// The workspaces the bar shows, left to right.
+//
+// `workspaces` is what Hyprland currently knows about, as
+// [{ id, occupied }]; `options` carries the settings that decide what is
+// shown, plus the focused workspace id. Ids outside 1-10 are dropped: those
+// are Hyprland's special workspaces (scratchpads, negative ids), which
+// aren't part of the numbered strip.
+function computeWorkspaceIds(workspaces, options) {
+  var list = workspaces || []
+  var settings = options || {}
+  var hideEmpty = clampSetting("hideEmpty", settings.hideEmpty)
+  var ids = []
 
-  for (var i = 0; i < existingIds.length; i++) {
-    var id = existingIds[i]
-    if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
+  function add(id) {
+    var number = Number(id)
+    if (number > 0 && number <= 10 && ids.indexOf(number) === -1) ids.push(number)
   }
+
+  // With empty workspaces hidden, the always-shown ones don't apply: the
+  // strip is then only what is in use.
+  if (!hideEmpty) {
+    var minWorkspaces = clampSetting("minWorkspaces", settings.minWorkspaces)
+    for (var id = 1; id <= minWorkspaces; id++) add(id)
+  }
+
+  for (var i = 0; i < list.length; i++) {
+    var workspace = list[i] || {}
+    if (!hideEmpty || workspace.occupied) add(workspace.id)
+  }
+
+  // The workspace you are on is always shown, so switching to an empty one
+  // doesn't make it vanish from under the cursor.
+  add(settings.focusedId)
 
   ids.sort(function(left, right) { return left - right })
   return ids
+}
+
+// Whether two id lists hold the same ids in the same order. The widget
+// rebuilds every cell when its list changes, so it uses this to leave the
+// list alone when a recomputation came out identical.
+function sameIds(left, right) {
+  if (!left || !right || left.length !== right.length) return false
+  for (var i = 0; i < left.length; i++) if (left[i] !== right[i]) return false
+  return true
 }
 
 // Hyprland's own "class" (from hyprctl) is preferred over the wlr-toplevel
@@ -48,44 +83,96 @@ function lookupIconOverride(overrides, key) {
   return String(overrides[key] || overrides[key.toLowerCase()] || "")
 }
 
-// Bounds for the widget's numeric settings, kept in one place: the widget
-// clamps with them, and test/manifest.test.js checks that the schema the
-// Setup menu renders (manifest.json) offers exactly these ranges.
-var SETTING_BOUNDS = {
-  maxIcons: { min: 1, max: 10, fallback: 5 },
-  iconSize: { min: 8, max: 32, fallback: 14 }
+// Every setting the widget understands, in the order the edit view shows
+// them. This is the one place their bounds, fallbacks and wording live: the
+// widget clamps with them, the edit view renders its form from them, and
+// test/manifest.test.js checks that a fresh shell.json entry starts on the
+// same defaults.
+//
+// `type` decides both the control the form shows and how a stored value is
+// read back: "integer" (with `min`/`max`) or "boolean".
+//
+// Labels live here rather than in manifest.json: settings are edited in this
+// plugin's own overlay, not in the Setup menu's generated form.
+var SETTING_FIELDS = [
+  {
+    key: "maxIcons",
+    type: "integer",
+    min: 1,
+    max: 10,
+    fallback: 5,
+    label: "Icons per workspace",
+    description: "How many window icons to show before the rest are counted as +N."
+  },
+  {
+    key: "iconSize",
+    type: "integer",
+    min: 8,
+    max: 32,
+    fallback: 14,
+    label: "Icon size",
+    description: "Size of each window icon, in pixels."
+  },
+  {
+    key: "minWorkspaces",
+    type: "integer",
+    min: 0,
+    max: 10,
+    fallback: 5,
+    label: "Workspaces always shown",
+    description: "Workspaces shown even while they are empty, counted from 1. Ignored while empty workspaces are hidden."
+  },
+  {
+    key: "hideEmpty",
+    type: "boolean",
+    fallback: false,
+    label: "Hide empty workspaces",
+    description: "Show only workspaces that have windows in them, plus the one you are on."
+  }
+]
+
+function settingField(name) {
+  for (var i = 0; i < SETTING_FIELDS.length; i++)
+    if (SETTING_FIELDS[i].key === name) return SETTING_FIELDS[i]
+  return null
+}
+
+// What a fresh shell.json entry starts on - manifest.json's `defaults`.
+var SETTING_DEFAULTS = {}
+for (var field = 0; field < SETTING_FIELDS.length; field++)
+  SETTING_DEFAULTS[SETTING_FIELDS[field].key] = SETTING_FIELDS[field].fallback
+
+// shell.json is hand-edited, so a boolean can arrive as a real boolean, as
+// the string "true"/"false", or as 1/0. Anything else is a typo rather than
+// an intent, and falls back.
+function coerceBoolean(value, fallback) {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    var text = value.trim().toLowerCase()
+    if (text === "true" || text === "1") return true
+    if (text === "false" || text === "0") return false
+    return fallback
+  }
+  if (value === 1) return true
+  if (value === 0) return false
+  return fallback
 }
 
 // A setting straight out of shell.json is whatever the user typed, so an
 // out-of-range number, a string or a boolean all have to end up as a usable
 // value rather than a broken widget.
 function clampSetting(name, value) {
-  var bounds = SETTING_BOUNDS[name]
-  if (!bounds) return value
+  var field = settingField(name)
+  if (!field) return value
+  if (field.type === "boolean") return coerceBoolean(value, field.fallback)
 
   var raw = typeof value === "string" ? value.trim() : value
   var usable = typeof raw === "number" || (typeof raw === "string" && raw.length > 0)
   var number = usable ? Number(raw) : NaN
-  if (!isFinite(number)) return bounds.fallback
+  if (!isFinite(number)) return field.fallback
 
-  return Math.min(bounds.max, Math.max(bounds.min, Math.round(number)))
+  return Math.min(field.max, Math.max(field.min, Math.round(number)))
 }
-
-// The fields the edit view offers, in order. Labels live here rather than in
-// manifest.json: settings are edited in this plugin's own overlay, not in the
-// Setup menu's generated form.
-var SETTING_FIELDS = [
-  {
-    key: "maxIcons",
-    label: "Icons per workspace",
-    description: "How many window icons to show before the rest are counted as +N."
-  },
-  {
-    key: "iconSize",
-    label: "Icon size",
-    description: "Size of each window icon, in pixels."
-  }
-]
 
 // The shell replaces a widget's shell.json entry wholesale, so a changed
 // setting has to be merged into everything the entry already holds - the icon
@@ -145,9 +232,11 @@ if (typeof module !== "undefined" && module.exports) {
     computeWindowKey: computeWindowKey,
     classifyIconValue: classifyIconValue,
     lookupIconOverride: lookupIconOverride,
+    sameIds: sameIds,
     clampSetting: clampSetting,
-    SETTING_BOUNDS: SETTING_BOUNDS,
     SETTING_FIELDS: SETTING_FIELDS,
+    SETTING_DEFAULTS: SETTING_DEFAULTS,
+    settingField: settingField,
     applySetting: applySetting,
     settingValue: settingValue,
     widgetSettingsFrom: widgetSettingsFrom,

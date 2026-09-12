@@ -22,7 +22,9 @@
     "defaultSection": "left",
     "defaults": {
       "maxIcons": 5,
-      "iconSize": 14
+      "iconSize": 14,
+      "minWorkspaces": 5,
+      "hideEmpty": false
     }
   }
 }

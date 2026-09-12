@@ -51,8 +51,8 @@ settings are left behind beyond this widget's entry in `shell.json`.
 
 ### The edit view
 
-`maxIcons` and `iconSize` have a small editor of their own. Bind it to a key
-in `~/.config/hypr/bindings.lua`:
+Every setting except the per-app `icons` overrides has a small editor of its
+own. Bind it to a key in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + SHIFT + ALT + Q", "Better Workspaces settings",
@@ -75,6 +75,8 @@ entry:
   "id": "better-workspaces",
   "maxIcons": 5,           // icons shown per workspace before "+N" overflow
   "iconSize": 14,          // icon size in px
+  "minWorkspaces": 5,      // workspaces shown even while empty, counted from 1
+  "hideEmpty": false,      // show only workspaces with windows in them
   "icons": {
     // Override the icon for a window class/appId. Value can be either an
     // icon-theme name or a literal glyph/emoji.
@@ -87,6 +89,12 @@ entry:
 
 Window class/appId matching is case-insensitive. To find a window's class,
 run `hyprctl clients` and look at its `class` field.
+
+A workspace above `minWorkspaces` is shown while Hyprland knows about it,
+which is as long as it has windows or you are on it. With `hideEmpty` on,
+`minWorkspaces` is ignored and the bar shows only the workspaces that have
+windows in them, plus the one you are on - so the strip grows and shrinks as
+you work.
 
 ## Testing
 
