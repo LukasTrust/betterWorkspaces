@@ -73,6 +73,37 @@ BarWidget {
     root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
+  // ---- per-window interaction -------------------------------------------
+
+  function windowTitle(toplevel) {
+    if (!toplevel)
+      return ""
+    return String(toplevel.title || (toplevel.wayland ? toplevel.wayland.title : "") || "")
+  }
+
+  // The foreign-toplevel activate request is what every other widget uses
+  // (ActiveWindow, Tray) and works even across monitors. It can be missing
+  // for a toplevel Hyprland hasn't matched to a wlr handle yet, so fall back
+  // to Hyprland's own dispatcher by address - this is the classic
+  // `hyprctl dispatch focuswindow` selector, not the Lua `hl.dsp` table,
+  // since there is no confirmed Lua equivalent for focusing by address.
+  function activateWindow(toplevel) {
+    if (!toplevel)
+      return
+    if (toplevel.wayland && typeof toplevel.wayland.activate === "function") {
+      toplevel.wayland.activate()
+      return
+    }
+    if (!root.bar || !toplevel.address)
+      return
+    root.bar.run("hyprctl dispatch focuswindow " + Util.shellQuote("address:" + toplevel.address))
+  }
+
+  function closeWindow(toplevel) {
+    if (toplevel && toplevel.wayland)
+      toplevel.wayland.close()
+  }
+
   // ---- icon resolution --------------------------------------------------
   //
   // Icon source, in order: a user override from this widget's shell.json
@@ -270,6 +301,17 @@ BarWidget {
           }
         }
 
+        // Declared before cellLayout so it sits underneath in paint order:
+        // it only receives clicks that fall through cellLayout's children
+        // (the label, gaps, the overflow count), never ones an icon's own
+        // MouseArea below already claimed.
+        MouseArea {
+          objectName: "workspaceMouseArea"
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.focusWorkspace(cell.modelData)
+        }
+
         GridLayout {
           id: cellLayout
           anchors.centerIn: parent
@@ -310,8 +352,23 @@ BarWidget {
                 objectName: "windowIcon"
                 required property var modelData
                 readonly property var icon: root.iconForWindow(modelData)
+                readonly property string windowTitle: root.windowTitle(modelData)
+                // Bar.showTooltip only actually shows anything when the
+                // target it's given has this exact property (it checks
+                // `target.tooltipHovered === true` before doing anything) -
+                // see Tray.qml/WidgetButton.qml for the same pattern. Without
+                // it, showTooltip is a silent no-op: no error, no tooltip.
+                readonly property bool tooltipHovered: visible && opacity > 0 && iconMouseArea.containsMouse
                 width: root.iconSize
                 height: root.iconSize
+
+                // The tooltip text is a snapshot passed to bar.showTooltip,
+                // not a binding, so a title change (e.g. a browser tab
+                // switch) has to re-push it explicitly while still hovered.
+                onWindowTitleChanged: {
+                  if (root.bar && iconSlot.tooltipHovered)
+                    root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
+                }
 
                 IconImage {
                   objectName: "iconImage"
@@ -333,6 +390,26 @@ BarWidget {
                   color: root.bar ? root.bar.barForeground : Color.foreground
                   renderType: Text.NativeRendering
                 }
+
+                // Sits on top of the cell-wide workspaceMouseArea below it
+                // (declared first), so a click on the icon itself acts on
+                // that window instead of just focusing the workspace.
+                MouseArea {
+                  id: iconMouseArea
+                  objectName: "windowIconMouseArea"
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                  cursorShape: Qt.PointingHandCursor
+                  onEntered: if (root.bar) root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
+                  onExited: if (root.bar) root.bar.hideTooltip(iconSlot)
+                  onClicked: function (mouse) {
+                    if (mouse.button === Qt.MiddleButton)
+                      root.closeWindow(iconSlot.modelData)
+                    else
+                      root.activateWindow(iconSlot.modelData)
+                  }
+                }
               }
             }
           }
@@ -348,13 +425,6 @@ BarWidget {
             color: root.bar ? root.bar.barForeground : Color.foreground
             opacity: 0.7
           }
-        }
-
-        MouseArea {
-          objectName: "workspaceMouseArea"
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.focusWorkspace(cell.modelData)
         }
       }
     }

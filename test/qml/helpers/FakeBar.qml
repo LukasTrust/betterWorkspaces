@@ -27,7 +27,19 @@ QtObject {
     api.testCommands = api.testCommands.concat([String(command || "")])
   }
 
+  // Matches Bar.qml's own gate: showTooltip is a silent no-op unless the
+  // target carries a `tooltipHovered` property that is exactly `true`. A
+  // widget that forgets this property gets no tooltip on the real bar even
+  // though calling showTooltip looks like it worked - this stub has to
+  // reject the same way or that bug passes tests. "test" prefix since this
+  // isn't a real PluginBarApi member, just this stub's own gate.
+  function testTargetTooltipHovered(target) {
+    return !!target && target.visible !== false && target.opacity !== 0 && target.tooltipHovered === true
+  }
+
   function showTooltip(target, text) {
+    if (!api.testTargetTooltipHovered(target) || !text)
+      return
     api.testTooltipLog = api.testTooltipLog.concat([
       {
         action: "show",

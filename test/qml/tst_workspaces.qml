@@ -269,6 +269,102 @@ TestCase {
     compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
   }
 
+  function test_clickingTheLabelStillFocusesTheWorkspace() {
+    Hyprland.workspaces.values = [makeWorkspace(3, [makeWindow("foot")])]
+    var widget = createWidget()
+    mouseClick(findChild(cellFor(widget, 3), "workspaceLabel"))
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
+  }
+
+  // ---- hovering and clicking an icon --------------------------------------
+
+  function test_hoveringAnIconShowsItsTitleAndLeavingHidesIt() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("foot", "My Terminal")])]
+    var widget = createWidget()
+    var slot = iconSlot(widget, 1, 0)
+
+    mouseMove(slot, slot.width / 2, slot.height / 2)
+    compare(fakeBar.testTooltipLog, [{
+      action: "show",
+      target: slot,
+      text: "My Terminal"
+    }])
+
+    mouseMove(widget, -10, -10)
+    compare(fakeBar.testTooltipLog[1], {
+      action: "hide",
+      target: slot,
+      text: ""
+    })
+  }
+
+  function test_titleChangeUpdatesTheOpenTooltip() {
+    var window = makeWindow("foot", "First Title")
+    Hyprland.workspaces.values = [makeWorkspace(1, [window])]
+    var widget = createWidget()
+    var slot = iconSlot(widget, 1, 0)
+
+    mouseMove(slot, slot.width / 2, slot.height / 2)
+    window.title = "Second Title"
+
+    var lastEntry = fakeBar.testTooltipLog[fakeBar.testTooltipLog.length - 1]
+    compare(lastEntry, {
+      action: "show",
+      target: slot,
+      text: "Second Title"
+    })
+  }
+
+  function test_titleChangeWhileNotHoveredDoesNotShowATooltip() {
+    var window = makeWindow("foot", "First Title")
+    Hyprland.workspaces.values = [makeWorkspace(1, [window])]
+    var widget = createWidget()
+
+    window.title = "Second Title"
+    compare(fakeBar.testTooltipLog, [])
+  }
+
+  function test_leftClickingAnIconActivatesExactlyThatWindow() {
+    var windows = [makeWindow("foot"), makeWindow("firefox")]
+    Hyprland.workspaces.values = [makeWorkspace(1, windows)]
+    var widget = createWidget()
+
+    mouseClick(iconSlot(widget, 1, 1))
+    compare(windows[0].wayland.testActivateCalls, 0)
+    compare(windows[1].wayland.testActivateCalls, 1)
+    compare(windows[1].wayland.testCloseCalls, 0)
+    compare(fakeBar.testCommands, [])
+  }
+
+  function test_leftClickFallsBackToHyprctlDispatchWithoutAWaylandHandle() {
+    var window = makeWindow("foot")
+    window.wayland = null
+    Hyprland.workspaces.values = [makeWorkspace(1, [window])]
+    var widget = createWidget()
+
+    mouseClick(iconSlot(widget, 1, 0))
+    compare(fakeBar.testCommands, ["hyprctl dispatch focuswindow 'address:" + window.address + "'"])
+  }
+
+  function test_middleClickingAnIconClosesExactlyThatWindow() {
+    var windows = [makeWindow("foot"), makeWindow("firefox")]
+    Hyprland.workspaces.values = [makeWorkspace(1, windows)]
+    var widget = createWidget()
+
+    mouseClick(iconSlot(widget, 1, 0), iconSlot(widget, 1, 0).width / 2, iconSlot(widget, 1, 0).height / 2, Qt.MiddleButton)
+    compare(windows[0].wayland.testCloseCalls, 1)
+    compare(windows[1].wayland.testCloseCalls, 0)
+    compare(windows[0].wayland.testActivateCalls, 0)
+  }
+
+  function test_clickingAnIconDoesNotAlsoFocusTheWorkspace() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("foot")])]
+    var widget = createWidget()
+
+    mouseClick(iconSlot(widget, 1, 0))
+    compare(fakeBar.testCommands, [])
+  }
+
   // ---- window icons -------------------------------------------------------
 
   function test_showsOneIconPerWindow() {

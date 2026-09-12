@@ -17,6 +17,14 @@ windows of the same app (e.g. two terminals) never repeat the lookup.
 
 <img src="preview.png" alt="Better Workspaces screenshot" width="600">
 
+## Using the icons
+
+- Hover an icon to see that window's title as a tooltip.
+- Left-click an icon to focus that exact window.
+- Middle-click an icon to close that window.
+- Clicking the workspace number or anywhere else in the cell still just
+  focuses the workspace, same as before.
+
 ## Install
 
 ```bash
