@@ -7,7 +7,14 @@ where, not just which workspaces are occupied.
 
 Icons come from your installed applications' own icon (resolved the same way
 the Omarchy menu resolves app icons), so new apps get an icon automatically
-with no configuration. You can override any app's icon per-window-class if
+with no configuration. Proton-run games in your Steam library get their own
+icon too (`gameIcons`, resolved straight from the window class - no extra
+process, no polling) - this covers games launched from Steam itself as well
+as other launchers like Heroic, as long as Proton is doing the running and
+the game is also in your Steam library. It doesn't cover native Linux game
+binaries: Steam only tags the window class for Proton games, so a native
+build (e.g. Valheim) shows the generic icon like any other unrecognized app,
+unless you override it. You can override any app's icon per-window-class if
 the automatic match isn't the one you want.
 
 Everything is resolved from Hyprland's own IPC event stream and Quickshell's
@@ -93,6 +100,7 @@ entry:
   "minWorkspaces": 5,      // workspaces shown even while empty, counted from 1
   "hideEmpty": false,      // show only workspaces with windows in them
   "groupApps": false,      // one icon per app, with a count badge, instead of one per window
+  "gameIcons": true,       // use a Proton game's own icon instead of the generic fallback
   "icons": {
     // Override the icon for a window class/appId. Value can be either an
     // icon-theme name or a literal glyph/emoji.

@@ -481,6 +481,54 @@ TestCase {
     compare(iconSlot(widget, 1, 0).icon.value, "🦊")
   }
 
+  function test_usesSteamIconForSteamGameWindows() {
+    Quickshell.testThemeIcons = withThemeIcons({
+      "steam_icon_570": "image://test/steam_icon_570"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("steam_app_570")])]
+    var widget = createWidget()
+    compare(iconSlot(widget, 1, 0).icon.source, "image://test/steam_icon_570")
+  }
+
+  function test_gameIconsOffSkipsSteamLookupEntirely() {
+    Quickshell.testThemeIcons = withThemeIcons({
+      "steam_icon_570": "image://test/steam_icon_570"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("steam_app_570")])]
+    var widget = createWidget({
+      gameIcons: false
+    })
+    // No desktop entry and no override for "steam_app_570" either, so with
+    // the lookup skipped this is indistinguishable from any other unknown
+    // app: the generic fallback icon, and no lookup for the Steam name at
+    // all - not even one that fails to resolve.
+    compare(iconSlot(widget, 1, 0).icon.source, "image://test/application-x-executable")
+    verify(!("steam_icon_570" in Quickshell.testIconPathCalls))
+  }
+
+  function test_userOverrideBeatsSteamIcon() {
+    Quickshell.testThemeIcons = withThemeIcons({
+      "steam_icon_570": "image://test/steam_icon_570"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("steam_app_570")])]
+    var widget = createWidget({
+      icons: {
+        "steam_app_570": "🎮"
+      }
+    })
+    compare(iconSlot(widget, 1, 0).icon.value, "🎮")
+    verify(!("steam_icon_570" in Quickshell.testIconPathCalls))
+  }
+
+  function test_resolvesSteamIconOnlyOncePerClass() {
+    Quickshell.testThemeIcons = withThemeIcons({
+      "steam_icon_570": "image://test/steam_icon_570"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("steam_app_570"), makeWindow("steam_app_570")]), makeWorkspace(2, [makeWindow("steam_app_570")])]
+    createWidget()
+    compare(Quickshell.testIconPathCalls["steam_icon_570"], 1)
+  }
+
   function test_resolvesEachWindowClassOnlyOnce() {
     DesktopEntries.testSetEntries({
       foot: {
@@ -807,7 +855,8 @@ TestCase {
       iconSize: 14,
       minWorkspaces: 5,
       hideEmpty: false,
-      groupApps: false
+      groupApps: false,
+      gameIcons: true
     })
     compare(state.workspaces.map(workspace => workspace.id), [1, 2, 3, 4, 5, 10])
 

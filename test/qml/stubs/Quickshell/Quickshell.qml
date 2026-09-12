@@ -10,9 +10,14 @@ QtObject {
   // Themed icon name -> resolved source. Names not listed are unresolved.
   property var testThemeIcons: ({})
   property var testExecuted: []
+  // Counts lookups per icon name, so tests can assert on the widget's icon
+  // cache the same way they do for DesktopEntries.testStats.lookups.
+  property var testIconPathCalls: ({})
 
   function iconPath(icon, check) {
-    var path = root.testThemeIcons[String(icon)]
+    var name = String(icon)
+    root.testIconPathCalls[name] = (root.testIconPathCalls[name] || 0) + 1
+    var path = root.testThemeIcons[name]
     if (path !== undefined)
       return path
     if (typeof check === "string")
@@ -37,6 +42,7 @@ QtObject {
       "application-x-executable": "image://test/application-x-executable"
     }
     root.testExecuted = []
+    root.testIconPathCalls = ({})
   }
 
   Component.onCompleted: testReset()

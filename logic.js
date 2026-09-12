@@ -83,6 +83,16 @@ function lookupIconOverride(overrides, key) {
   return String(overrides[key] || overrides[key.toLowerCase()] || "")
 }
 
+// Steam sets a game window's class to "steam_app_<appid>" (Proton and native
+// Linux titles alike); Steam itself installs a matching "steam_icon_<appid>"
+// entry into the icon theme when the game is added to the library, so the
+// appid is all that's needed to look one up - no extra process or file read.
+// Returns null for anything that isn't that exact shape.
+function steamAppId(key) {
+  var match = /^steam_app_(\d+)$/i.exec(String(key || "").trim())
+  return match ? match[1] : null
+}
+
 // Groups windows by their window key (case-insensitively, same as icon
 // overrides), in first-seen order. With `groupApps` off, the caller wraps
 // each window as its own single-window group instead of calling this, so
@@ -165,6 +175,13 @@ var SETTING_FIELDS = [
     fallback: false,
     label: "Group windows by app",
     description: "Show one icon per app, with a count badge once it has 2 or more windows, instead of one icon per window."
+  },
+  {
+    key: "gameIcons",
+    type: "boolean",
+    fallback: true,
+    label: "Game icons",
+    description: "Show a game's own icon for Proton-run games that are in your Steam library, including ones launched from Heroic or similar. Native Linux game binaries aren't covered. Resolved once per window class and cached, same as every other icon; turn off to skip that extra lookup entirely."
   }
 ]
 
@@ -269,6 +286,7 @@ if (typeof module !== "undefined" && module.exports) {
     computeWindowKey: computeWindowKey,
     classifyIconValue: classifyIconValue,
     lookupIconOverride: lookupIconOverride,
+    steamAppId: steamAppId,
     groupToplevels: groupToplevels,
     sameIds: sameIds,
     clampSetting: clampSetting,

@@ -7,6 +7,7 @@ const {
   computeWindowKey,
   classifyIconValue,
   lookupIconOverride,
+  steamAppId,
   groupToplevels,
   clampSetting,
   SETTING_FIELDS,
@@ -120,6 +121,20 @@ test("lookupIconOverride matches a key exactly, then case-insensitively", () => 
   assert.equal(lookupIconOverride({ firefox: "🦊" }, "Firefox"), "🦊")
   assert.equal(lookupIconOverride({ firefox: "🦊" }, "steam"), "")
   assert.equal(lookupIconOverride(null, "firefox"), "")
+})
+
+test("steamAppId pulls the appid out of a Steam window class, else null", () => {
+  assert.equal(steamAppId("steam_app_570"), "570")
+  assert.equal(steamAppId("STEAM_APP_570"), "570")
+  assert.equal(steamAppId("  steam_app_570  "), "570")
+  assert.equal(steamAppId("steam_app_0"), "0")
+  assert.equal(steamAppId("steam_app_"), null)
+  assert.equal(steamAppId("steam_app_570x"), null)
+  assert.equal(steamAppId("not_steam_app_570"), null)
+  assert.equal(steamAppId("steamapp570"), null)
+  assert.equal(steamAppId(""), null)
+  assert.equal(steamAppId(null), null)
+  assert.equal(steamAppId(undefined), null)
 })
 
 test("groupToplevels groups by key, in first-seen order, keeping every window", () => {

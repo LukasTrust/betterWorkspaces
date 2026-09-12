@@ -135,10 +135,11 @@ BarWidget {
   // ---- icon resolution --------------------------------------------------
   //
   // Icon source, in order: a user override from this widget's shell.json
-  // entry, then the icon of the installed app whose desktop entry best
-  // matches the window's class, then a generic executable icon. Resolved
-  // icons are cached by window class (not per-window), so opening a second
-  // terminal or a second browser window never repeats the lookup.
+  // entry, then (with `gameIcons` on) a Steam game's own icon, then the
+  // icon of the installed app whose desktop entry best matches the window's
+  // class, then a generic executable icon. Resolved icons are cached by
+  // window class (not per-window), so opening a second terminal or a second
+  // browser window never repeats the lookup.
 
   // Ranges and fallbacks live in logic.js (SETTING_FIELDS), so the edit view
   // and this clamping can't drift apart.
@@ -147,6 +148,7 @@ BarWidget {
   readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", setting("minWorkspaces", null))
   readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", setting("hideEmpty", null))
   readonly property bool groupApps: Logic.clampSetting("groupApps", setting("groupApps", null))
+  readonly property bool gameIcons: Logic.clampSetting("gameIcons", setting("gameIcons", null))
 
   property var _iconCache: ({})
 
@@ -199,6 +201,20 @@ BarWidget {
       source: Quickshell.iconPath("application-x-executable", true)
     })
 
+  // Steam installs a "steam_icon_<appid>" icon-theme entry for every game in
+  // the library, so a Steam window's own icon is one theme lookup away once
+  // its appid is pulled out of the class - no desktop-entry match needed and
+  // nothing to guess. Returns null (rather than a text fallback) when the
+  // class isn't a Steam window or the icon isn't installed, so the caller
+  // falls through to the desktop-entry lookup instead of showing a raw name.
+  function steamIcon(key) {
+    var appId = Logic.steamAppId(key)
+    if (!appId)
+      return null
+    var themed = Quickshell.iconPath("steam_icon_" + appId, true)
+    return themed.length > 0 ? { kind: "image", source: themed } : null
+  }
+
   function iconForWindow(toplevel) {
     var key = root.windowKey(toplevel)
     if (key.length === 0)
@@ -210,6 +226,8 @@ BarWidget {
       return cached
 
     var resolved = root.classifyIconValue(root.userIconOverride(key))
+    if (!resolved && root.gameIcons)
+      resolved = root.steamIcon(key)
     if (!resolved) {
       // An exact desktop-id match (e.g. window class "zen" -> zen.desktop)
       // beats the fuzzy heuristic: heuristicLookup scores by name/exec
@@ -271,7 +289,8 @@ BarWidget {
         iconSize: root.iconSize,
         minWorkspaces: root.minWorkspaces,
         hideEmpty: root.hideEmpty,
-        groupApps: root.groupApps
+        groupApps: root.groupApps,
+        gameIcons: root.gameIcons
       },
       workspaces: workspaces
     }

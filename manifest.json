@@ -25,7 +25,8 @@
       "iconSize": 14,
       "minWorkspaces": 5,
       "hideEmpty": false,
-      "groupApps": false
+      "groupApps": false,
+      "gameIcons": true
     }
   }
 }
