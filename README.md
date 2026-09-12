@@ -30,8 +30,12 @@ ln -s /path/to/betterWorkspaces ~/.config/omarchy/plugins/better-workspaces
 omarchy plugin enable better-workspaces --section left
 ```
 
-Saving a file under `~/.config/omarchy/plugins/` hot-reloads it - no restart
-needed while developing.
+Omarchy's plugin watcher doesn't follow symlinks, so edits in the checkout
+aren't hot-reloaded. Re-creating the link (`ln -sfn "$PWD"
+~/.config/omarchy/plugins/better-workspaces`) triggers Omarchy's plugin
+reload, but that doesn't reliably pick up the new code; `omarchy restart
+shell` always does. To check a change without touching your bar, use the
+tests below - they always run the current checkout.
 
 ## Remove
 
@@ -45,7 +49,25 @@ settings are left behind beyond this widget's entry in `shell.json`.
 
 ## Configuration
 
-Configured inline in `~/.config/omarchy/shell.json`, on this widget's layout
+### The edit view
+
+`maxIcons` and `iconSize` have a small editor of their own. Bind it to a key
+in `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("SUPER + SHIFT + ALT + Q", "Better Workspaces settings",
+  [[omarchy-shell shell toggle better-workspaces '{"view":"settings"}']])
+```
+
+Changes apply as you make them and are written back to your `shell.json`
+entry; `Esc` or a click outside closes the view. Values outside the allowed
+range are pulled to the nearest one, and anything unusable falls back to the
+default.
+
+### shell.json
+
+The per-app `icons` overrides are only editable here. Everything is
+configured inline in `~/.config/omarchy/shell.json`, on this widget's layout
 entry:
 
 ```jsonc
@@ -68,12 +90,34 @@ run `hyprctl clients` and look at its `class` field.
 
 ## Testing
 
-The icon/window-key/workspace-list logic is pulled out of `Workspaces.qml`
-into `logic.js` as plain functions with no Quickshell dependency, so it can
-run under plain Node:
+Three levels, from fast and isolated to real:
 
 ```bash
-npm test
+npm test            # logic.js unit tests + coverage gate, stand-in API check
+npm run test:qml    # widget behaviour, headless, against stand-in modules
+npm run test:e2e    # real windows on your live Hyprland session
+```
+
+- **`npm test`** runs the pure logic in `logic.js` under plain Node, with a
+  coverage gate. It also checks that every member of the QML test
+  stand-ins exists on the real Quickshell/Omarchy type, so a QML test can't
+  pass against an API that doesn't exist (skipped where Quickshell isn't
+  installed, e.g. in CI).
+- **`npm run test:qml`** loads `Workspaces.qml` in `qmltestrunner` against
+  the stand-ins in `test/qml/stubs`, so it needs neither Hyprland nor
+  Omarchy. Needs `qmltestrunner` (Arch: `qt6-declarative`).
+- **`npm run test:e2e`** opens real `foot` windows and checks what the
+  widget reports it shows. By default it runs the current checkout in a
+  throwaway Quickshell instance (real modules, no window, doesn't touch your
+  bar); `npm run test:e2e -- --live` asks the widget on your bar instead.
+  It briefly switches to a free workspace between 6 and 10 - don't type
+  while it runs. Needs `foot` and `jq`.
+
+The widget reports what it's showing as JSON, which is what the end-to-end
+tests read:
+
+```bash
+omarchy-shell better-workspaces state
 ```
 
 Before publishing a change, also validate the plugin the way Omarchy does:

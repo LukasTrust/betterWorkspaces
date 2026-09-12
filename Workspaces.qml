@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
@@ -52,8 +53,10 @@ BarWidget {
   // icons are cached by window class (not per-window), so opening a second
   // terminal or a second browser window never repeats the lookup.
 
-  readonly property int maxIcons: Math.max(1, Number(setting("maxIcons", 5)))
-  readonly property int iconSize: Math.max(8, Number(setting("iconSize", 14)))
+  // Ranges and fallbacks live in logic.js, so the Setup menu's sliders
+  // (manifest.json) and this clamping can't drift apart.
+  readonly property int maxIcons: Logic.clampSetting("maxIcons", setting("maxIcons", null))
+  readonly property int iconSize: Logic.clampSetting("iconSize", setting("iconSize", null))
 
   property var _iconCache: ({})
 
@@ -133,6 +136,62 @@ BarWidget {
     return resolved
   }
 
+  // ---- introspection ------------------------------------------------------
+  //
+  // `omarchy-shell better-workspaces state` prints what this widget is
+  // showing right now, as JSON. It's read back from the rendered items
+  // rather than recomputed, so the end-to-end tests in test/e2e check the
+  // real output. Read-only; with one bar per monitor, whichever instance
+  // owns the IPC target answers, and they all show the same thing.
+
+  function renderedState() {
+    var workspaces = []
+    for (var i = 0; i < workspaceRepeater.count; i++) {
+      var cell = workspaceRepeater.itemAt(i)
+      if (!cell)
+        continue
+      var icons = []
+      for (var j = 0; j < cell.iconItems.count; j++) {
+        var slot = cell.iconItems.itemAt(j)
+        if (!slot)
+          continue
+        icons.push({
+          address: String(slot.modelData.address || ""),
+          key: root.windowKey(slot.modelData),
+          kind: slot.icon.kind,
+          icon: String(slot.icon.kind === "image" ? slot.icon.source : slot.icon.value)
+        })
+      }
+
+      workspaces.push({
+        id: cell.modelData,
+        label: cell.label,
+        focused: cell.focused,
+        occupied: cell.occupied,
+        windows: cell.toplevels.length,
+        overflow: cell.overflowCount,
+        icons: icons
+      })
+    }
+
+    return {
+      settings: {
+        maxIcons: root.maxIcons,
+        iconSize: root.iconSize
+      },
+      workspaces: workspaces
+    }
+  }
+
+  IpcHandler {
+    objectName: "ipcHandler"
+    target: "better-workspaces"
+
+    function state(): string {
+      return JSON.stringify(root.renderedState())
+    }
+  }
+
   // ---- layout -------------------------------------------------------------
 
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
@@ -142,6 +201,7 @@ BarWidget {
 
   GridLayout {
     id: grid
+    objectName: "workspaceGrid"
     anchors.fill: parent
     anchors.rightMargin: root.trailingGap
     columns: root.vertical ? 1 : root.workspaceIds().length
@@ -149,10 +209,13 @@ BarWidget {
     rowSpacing: root.vertical ? Style.space(2) : 0
 
     Repeater {
+      id: workspaceRepeater
+      objectName: "workspaceRepeater"
       model: root.workspaceIds()
 
       Item {
         id: cell
+        objectName: "workspaceCell-" + modelData
         required property int modelData
 
         readonly property var workspace: root.workspaceById(modelData)
@@ -161,6 +224,8 @@ BarWidget {
         readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
         readonly property var shownToplevels: toplevels.slice(0, root.maxIcons)
         readonly property int overflowCount: Math.max(0, toplevels.length - root.maxIcons)
+        readonly property string label: modelData === 10 ? "0" : String(modelData)
+        property alias iconItems: iconRepeater
 
         opacity: occupied || focused ? 1 : 0.5
         implicitWidth: root.vertical ? root.barSize : cellLayout.implicitWidth + Style.space(12)
@@ -181,6 +246,7 @@ BarWidget {
           rowSpacing: Style.space(2)
 
           Text {
+            objectName: "workspaceLabel"
             Layout.alignment: Qt.AlignCenter
             textFormat: Text.PlainText
             // A theme-color change rather than a swapped-in glyph: the
@@ -189,7 +255,7 @@ BarWidget {
             // doesn't carry it (Style.font.family is themeable and not
             // guaranteed to be a Nerd Font). A color/weight change always
             // renders.
-            text: cell.modelData === 10 ? "0" : String(cell.modelData)
+            text: cell.label
             color: cell.focused ? Color.bar.active : (root.bar ? root.bar.barForeground : Color.foreground)
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
@@ -203,16 +269,20 @@ BarWidget {
             visible: cell.shownToplevels.length > 0
 
             Repeater {
+              id: iconRepeater
+              objectName: "iconRepeater"
               model: cell.shownToplevels
 
               Item {
                 id: iconSlot
+                objectName: "windowIcon"
                 required property var modelData
                 readonly property var icon: root.iconForWindow(modelData)
                 width: root.iconSize
                 height: root.iconSize
 
                 IconImage {
+                  objectName: "iconImage"
                   anchors.fill: parent
                   implicitSize: root.iconSize
                   asynchronous: true
@@ -221,6 +291,7 @@ BarWidget {
                 }
 
                 Text {
+                  objectName: "iconText"
                   anchors.centerIn: parent
                   textFormat: Text.PlainText
                   visible: iconSlot.icon.kind === "text"
@@ -235,6 +306,7 @@ BarWidget {
           }
 
           Text {
+            objectName: "overflowLabel"
             Layout.alignment: Qt.AlignCenter
             visible: cell.overflowCount > 0
             textFormat: Text.PlainText
@@ -247,6 +319,7 @@ BarWidget {
         }
 
         MouseArea {
+          objectName: "workspaceMouseArea"
           anchors.fill: parent
           cursorShape: Qt.PointingHandCursor
           onClicked: root.focusWorkspace(cell.modelData)

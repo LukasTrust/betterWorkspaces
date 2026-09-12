@@ -1,0 +1,3 @@
+module qs.Ui
+BarWidget 1.0 BarWidget.qml
+NumberField 1.0 NumberField.qml

@@ -1,0 +1,2 @@
+module Quickshell.Wayland
+Toplevel 1.0 Toplevel.qml
