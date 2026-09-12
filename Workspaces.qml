@@ -95,10 +95,39 @@ BarWidget {
   }
 
   // Reads this widget's "icons" map from its shell.json layout entry, e.g.:
-  //   { "id": "better-workspaces", "icons": { "firefox": "󰍬" } }
-  function userIconOverride(key) {
+  //   { "id": "better-workspaces", "icons": { "firefox": "󰍬", "discord": "omarchy-discord" } }
+  function userIconOverride(key, appHint, title) {
     var overrides = root.settings ? root.settings.icons : null
-    return Logic.lookupIconOverride(overrides, key)
+    return Logic.lookupIconOverride(overrides, key, appHint, title)
+  }
+
+  function resolveDesktopEntry(key, appHint, initialTitle, domain) {
+    if (!DesktopEntries)
+      return null
+
+    if (appHint) {
+      var entry = DesktopEntries.byId(appHint) || DesktopEntries.heuristicLookup(appHint)
+      if (entry && entry.icon)
+        return entry
+    }
+
+    // Match installed desktop entries (such as web apps created by Omarchy)
+    var apps = DesktopEntries.applications ? DesktopEntries.applications.values : []
+    for (var i = 0; i < apps.length; i++) {
+      var app = apps[i]
+      if (!app)
+        continue
+      if (appHint && ((app.id && app.id.toLowerCase() === appHint.toLowerCase()) || (app.name && app.name.toLowerCase() === appHint.toLowerCase()))) {
+        if (app.icon)
+          return app
+      }
+      if (app.execString && Logic.execMatchesInitialTitle(app.execString, initialTitle, domain)) {
+        if (app.icon)
+          return app
+      }
+    }
+
+    return DesktopEntries.byId(key) || DesktopEntries.heuristicLookup(key)
   }
 
   readonly property var fallbackIcon: ({
@@ -107,25 +136,43 @@ BarWidget {
     })
 
   function iconForWindow(toplevel) {
+    if (!toplevel)
+      return root.fallbackIcon
+
+    var ipc = toplevel.lastIpcObject || {}
     var key = root.windowKey(toplevel)
     if (key.length === 0)
       return root.fallbackIcon
 
-    var cacheKey = key.toLowerCase()
+    var title = String(ipc.title || (toplevel.wayland ? toplevel.wayland.title : "") || "")
+    var initialTitle = String(ipc.initialTitle || "")
+
+    var webAppInfo = Logic.detectWebApp(key, initialTitle, title)
+    var cacheKey = Logic.computeCacheKey(key, title, initialTitle, webAppInfo.hint, webAppInfo.isWebApp)
+
     var cached = root._iconCache[cacheKey]
     if (cached !== undefined)
       return cached
 
-    var resolved = root.classifyIconValue(root.userIconOverride(key))
+    // 1. User override from shell.json (supports class, appHint, title:, and regex)
+    var overrideValue = root.userIconOverride(key, webAppInfo.hint, title)
+    var resolved = root.classifyIconValue(overrideValue)
+
+    // 2. Desktop entry lookup (handles web apps, installed apps, and heuristic lookup)
     if (!resolved) {
-      // An exact desktop-id match (e.g. window class "zen" -> zen.desktop)
-      // beats the fuzzy heuristic: heuristicLookup scores by name/exec
-      // similarity and can under-match a short, generic-looking class like
-      // "zen" even though the id match is exact and free.
-      var entry = DesktopEntries.byId(key) || DesktopEntries.heuristicLookup(key)
+      var entry = root.resolveDesktopEntry(key, webAppInfo.hint, initialTitle, webAppInfo.domain)
       if (entry && entry.icon)
         resolved = root.classifyIconValue(entry.icon)
     }
+
+    // 3. Themed icon fallback for web apps (e.g. omarchy-discord or discord)
+    if (!resolved && webAppInfo.hint) {
+      resolved = root.classifyIconValue("omarchy-" + webAppInfo.hint)
+      if (!resolved)
+        resolved = root.classifyIconValue(webAppInfo.hint)
+    }
+
+    // 4. Default executable fallback icon
     if (!resolved)
       resolved = root.fallbackIcon
 
