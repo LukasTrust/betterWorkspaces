@@ -534,6 +534,210 @@ TestCase {
     })
   }
 
+  // ---- grouping apps (groupApps) ------------------------------------------
+
+  function groupBadge(slot) {
+    return findChild(slot, "groupBadge")
+  }
+
+  function groupBadgeText(slot) {
+    return findChild(slot, "groupBadgeText")
+  }
+
+  function test_groupAppsShowsOneIconPerAppWithABadgeFromTwoWindowsOn() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("code"), makeWindow("code"), makeWindow("firefox")])]
+    var widget = createWidget({
+      groupApps: true
+    })
+
+    compare(iconRepeater(widget, 1).count, 2)
+
+    var codeSlot = iconSlot(widget, 1, 0)
+    var firefoxSlot = iconSlot(widget, 1, 1)
+    compare(codeSlot.count, 2)
+    compare(firefoxSlot.count, 1)
+    verify(groupBadge(codeSlot).visible)
+    verify(groupBadgeText(codeSlot).visible)
+    compare(groupBadgeText(codeSlot).text, "2")
+    verify(!groupBadge(firefoxSlot).visible)
+    verify(!groupBadgeText(firefoxSlot).visible)
+  }
+
+  // A badge circle over the icon can't fit a readable digit without
+  // shrinking it to nothing at the default 14px icon size. The count has to
+  // sit beside the icon, not on top of it, a shade under the icon's own
+  // size so it labels rather than competes with it.
+  function test_groupBadgeCountIsReadableAndDoesNotShrinkTheIcon() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("code"), makeWindow("code")])]
+    var widget = createWidget({
+      groupApps: true,
+      iconSize: 14
+    })
+    var slot = iconSlot(widget, 1, 0)
+
+    compare(findChild(slot, "iconImage").width, 14)
+    compare(findChild(slot, "iconImage").height, 14)
+    compare(groupBadgeText(slot).font.pixelSize, 10)
+  }
+
+  // The chip has to be bigger than a plain icon slot - not the same size -
+  // precisely so the icon and the count inside it aren't cramped against
+  // its edge; a plain (single-window) icon next to it stays untouched.
+  function test_groupChipIsBiggerThanAPlainIconNextToIt() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("code"), makeWindow("code"), makeWindow("firefox")])]
+    var widget = createWidget({
+      groupApps: true,
+      iconSize: 14
+    })
+
+    var groupedSlot = iconSlot(widget, 1, 0)
+    var plainSlot = iconSlot(widget, 1, 1)
+
+    compare(plainSlot.height, 14)
+    verify(groupedSlot.height > plainSlot.height, "grouped chip (" + groupedSlot.height + ") should be taller than a plain icon (" + plainSlot.height + ")")
+    compare(findChild(groupedSlot, "iconImage").width, 14)
+    compare(findChild(groupedSlot, "iconImage").height, 14)
+  }
+
+  function test_groupAppsOffKeepsOneIconPerWindowEvenForTheSameApp() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("code"), makeWindow("code")])]
+    var widget = createWidget({
+      groupApps: false
+    })
+
+    compare(iconRepeater(widget, 1).count, 2)
+    compare(iconSlot(widget, 1, 0).count, 1)
+    verify(!groupBadge(iconSlot(widget, 1, 0)).visible)
+  }
+
+  function test_groupBadgeUpdatesLiveAsWindowsOpenAndClose() {
+    var workspace = makeWorkspace(1, [makeWindow("code")])
+    Hyprland.workspaces.values = [workspace]
+    var widget = createWidget({
+      groupApps: true
+    })
+
+    compare(iconRepeater(widget, 1).count, 1)
+    verify(!groupBadge(iconSlot(widget, 1, 0)).visible)
+
+    var second = makeWindow("code")
+    workspace.toplevels.values = workspace.toplevels.values.concat([second])
+    compare(iconRepeater(widget, 1).count, 1)
+    verify(groupBadge(iconSlot(widget, 1, 0)).visible)
+    compare(groupBadgeText(iconSlot(widget, 1, 0)).text, "2")
+
+    workspace.toplevels.values = [second]
+    verify(!groupBadge(iconSlot(widget, 1, 0)).visible)
+  }
+
+  function test_maxIconsAndOverflowCountGroupsNotWindows() {
+    var windows = []
+    for (var i = 0; i < 3; i++)
+      windows.push(makeWindow("code"))
+    for (var j = 0; j < 2; j++)
+      windows.push(makeWindow("firefox"))
+    Hyprland.workspaces.values = [makeWorkspace(1, windows)]
+    var widget = createWidget({
+      groupApps: true,
+      maxIcons: 1
+    })
+
+    compare(iconRepeater(widget, 1).count, 1)
+    compare(findChild(cellFor(widget, 1), "overflowLabel").text, "+1")
+  }
+
+  function test_groupTooltipListsAllWindowTitles() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("code", "Alpha"), makeWindow("code", "Beta")])]
+    var widget = createWidget({
+      groupApps: true
+    })
+    var slot = iconSlot(widget, 1, 0)
+
+    mouseMove(slot, slot.width / 2, slot.height / 2)
+    compare(fakeBar.testTooltipLog[0], {
+      action: "show",
+      target: slot,
+      text: "Alpha\nBeta"
+    })
+  }
+
+  function test_clickingAFreshGroupFocusesItsFirstWindow() {
+    var w0 = makeWindow("code")
+    var w1 = makeWindow("code")
+    Hyprland.workspaces.values = [makeWorkspace(1, [w0, w1])]
+    var widget = createWidget({
+      groupApps: true
+    })
+
+    mouseClick(iconSlot(widget, 1, 0))
+    compare(w0.wayland.testActivateCalls, 1)
+    compare(w1.wayland.testActivateCalls, 0)
+  }
+
+  function test_repeatedClicksOnAGroupCycleThroughItsWindows() {
+    var w0 = makeWindow("code", "one")
+    var w1 = makeWindow("code", "two")
+    var w2 = makeWindow("code", "three")
+    Hyprland.workspaces.values = [makeWorkspace(1, [w0, w1, w2])]
+    var widget = createWidget({
+      groupApps: true
+    })
+    var slot = iconSlot(widget, 1, 0)
+
+    // Each click targets the window after whichever the group currently has
+    // focused - simulated here the way Hyprland would report it back after
+    // each activation, one window at a time.
+    w0.activated = true
+    mouseClick(slot)
+    compare(w1.wayland.testActivateCalls, 1)
+    compare(w0.wayland.testActivateCalls, 0)
+    compare(w2.wayland.testActivateCalls, 0)
+
+    w0.activated = false
+    w1.activated = true
+    mouseClick(slot)
+    compare(w2.wayland.testActivateCalls, 1)
+
+    w1.activated = false
+    w2.activated = true
+    mouseClick(slot)
+    compare(w0.wayland.testActivateCalls, 1)
+  }
+
+  function test_clickingAGroupGoesToTheLastKnownFocusWhenNoneIsFocusedNow() {
+    var w0 = makeWindow("code")
+    var w1 = makeWindow("code")
+    Hyprland.workspaces.values = [makeWorkspace(1, [w0, w1])]
+    var widget = createWidget({
+      groupApps: true
+    })
+    var slot = iconSlot(widget, 1, 0)
+
+    // w1 was focused at some point, then focus moved away entirely (e.g. to
+    // another workspace) - none of the group's windows is focused any more.
+    w1.activated = true
+    w1.activated = false
+
+    mouseClick(slot)
+    compare(w1.wayland.testActivateCalls, 1)
+    compare(w0.wayland.testActivateCalls, 0)
+  }
+
+  function test_middleClickOnAGroupClosesTheFocusedWindow() {
+    var w0 = makeWindow("code")
+    var w1 = makeWindow("code")
+    Hyprland.workspaces.values = [makeWorkspace(1, [w0, w1])]
+    var widget = createWidget({
+      groupApps: true
+    })
+    var slot = iconSlot(widget, 1, 0)
+    w1.activated = true
+
+    mouseClick(slot, slot.width / 2, slot.height / 2, Qt.MiddleButton)
+    compare(w1.wayland.testCloseCalls, 1)
+    compare(w0.wayland.testCloseCalls, 0)
+  }
+
   // ---- bar orientation ----------------------------------------------------
 
   function test_horizontalBarUsesOneColumnPerWorkspace() {
@@ -602,7 +806,8 @@ TestCase {
       maxIcons: 1,
       iconSize: 14,
       minWorkspaces: 5,
-      hideEmpty: false
+      hideEmpty: false,
+      groupApps: false
     })
     compare(state.workspaces.map(workspace => workspace.id), [1, 2, 3, 4, 5, 10])
 

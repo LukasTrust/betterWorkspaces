@@ -83,6 +83,36 @@ function lookupIconOverride(overrides, key) {
   return String(overrides[key] || overrides[key.toLowerCase()] || "")
 }
 
+// Groups windows by their window key (case-insensitively, same as icon
+// overrides), in first-seen order. With `groupApps` off, the caller wraps
+// each window as its own single-window group instead of calling this, so
+// the rest of the widget can treat both modes the same way - maxIcons and
+// the +N overflow count groups either way, not raw windows.
+//
+// `keyOf(toplevel)` returns the string a window is grouped and iconified
+// by; in the real widget this is windowKey (Hyprland's "class", falling
+// back to the wlr appId).
+function groupToplevels(toplevels, keyOf) {
+  var list = toplevels || []
+  var groups = []
+  var indexByKey = {}
+
+  for (var i = 0; i < list.length; i++) {
+    var toplevel = list[i]
+    var rawKey = String((keyOf ? keyOf(toplevel) : "") || "")
+    var lookupKey = rawKey.toLowerCase()
+    var index = indexByKey[lookupKey]
+    if (index === undefined) {
+      index = groups.length
+      indexByKey[lookupKey] = index
+      groups.push({ key: rawKey, toplevels: [] })
+    }
+    groups[index].toplevels.push(toplevel)
+  }
+
+  return groups
+}
+
 // Every setting the widget understands, in the order the edit view shows
 // them. This is the one place their bounds, fallbacks and wording live: the
 // widget clamps with them, the edit view renders its form from them, and
@@ -128,6 +158,13 @@ var SETTING_FIELDS = [
     fallback: false,
     label: "Hide empty workspaces",
     description: "Show only workspaces that have windows in them, plus the one you are on."
+  },
+  {
+    key: "groupApps",
+    type: "boolean",
+    fallback: false,
+    label: "Group windows by app",
+    description: "Show one icon per app, with a count badge once it has 2 or more windows, instead of one icon per window."
   }
 ]
 
@@ -232,6 +269,7 @@ if (typeof module !== "undefined" && module.exports) {
     computeWindowKey: computeWindowKey,
     classifyIconValue: classifyIconValue,
     lookupIconOverride: lookupIconOverride,
+    groupToplevels: groupToplevels,
     sameIds: sameIds,
     clampSetting: clampSetting,
     SETTING_FIELDS: SETTING_FIELDS,

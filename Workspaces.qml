@@ -104,6 +104,34 @@ BarWidget {
       toplevel.wayland.close()
   }
 
+  // Joins every window's title in a group, for the group icon's tooltip. A
+  // single-window group (or groupApps off, where every group has exactly
+  // one window) reduces to just that window's title, same as before.
+  function groupTitle(toplevels) {
+    var list = toplevels || []
+    var titles = []
+    for (var i = 0; i < list.length; i++) {
+      var title = root.windowTitle(list[i])
+      if (title.length > 0)
+        titles.push(title)
+    }
+    return titles.join("\n")
+  }
+
+  // The window a click on a group's icon should act on: the one after
+  // whichever is currently focused, cycling through the group - so a
+  // repeated click steps through its windows. `null` when none of the
+  // group's windows is focused right now, so the caller falls back to
+  // whichever it last saw focused.
+  function nextGroupToplevel(toplevels) {
+    var list = toplevels || []
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].activated)
+        return list[(i + 1) % list.length]
+    }
+    return null
+  }
+
   // ---- icon resolution --------------------------------------------------
   //
   // Icon source, in order: a user override from this widget's shell.json
@@ -118,6 +146,7 @@ BarWidget {
   readonly property int iconSize: Logic.clampSetting("iconSize", setting("iconSize", null))
   readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", setting("minWorkspaces", null))
   readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", setting("hideEmpty", null))
+  readonly property bool groupApps: Logic.clampSetting("groupApps", setting("groupApps", null))
 
   property var _iconCache: ({})
 
@@ -217,10 +246,11 @@ BarWidget {
         if (!slot)
           continue
         icons.push({
-          address: String(slot.modelData.address || ""),
-          key: root.windowKey(slot.modelData),
+          address: String((slot.representativeToplevel && slot.representativeToplevel.address) || ""),
+          key: slot.modelData.key,
           kind: slot.icon.kind,
-          icon: String(slot.icon.kind === "image" ? slot.icon.source : slot.icon.value)
+          icon: String(slot.icon.kind === "image" ? slot.icon.source : slot.icon.value),
+          count: slot.count
         })
       }
 
@@ -240,7 +270,8 @@ BarWidget {
         maxIcons: root.maxIcons,
         iconSize: root.iconSize,
         minWorkspaces: root.minWorkspaces,
-        hideEmpty: root.hideEmpty
+        hideEmpty: root.hideEmpty,
+        groupApps: root.groupApps
       },
       workspaces: workspaces
     }
@@ -285,8 +316,17 @@ BarWidget {
         readonly property var toplevels: workspace ? workspace.toplevels.values : []
         readonly property bool occupied: toplevels.length > 0
         readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
-        readonly property var shownToplevels: toplevels.slice(0, root.maxIcons)
-        readonly property int overflowCount: Math.max(0, toplevels.length - root.maxIcons)
+        // One entry per icon shown: a group of same-app windows with
+        // `groupApps` on, otherwise every window as its own single-window
+        // group - so maxIcons/overflow always count icons, not raw windows.
+        readonly property var iconGroups: root.groupApps ? Logic.groupToplevels(toplevels, root.windowKey) : toplevels.map(function (toplevel) {
+          return {
+            key: root.windowKey(toplevel),
+            toplevels: [toplevel]
+          }
+        })
+        readonly property var shownGroups: iconGroups.slice(0, root.maxIcons)
+        readonly property int overflowCount: Math.max(0, iconGroups.length - root.maxIcons)
         readonly property string label: modelData === 10 ? "0" : String(modelData)
         property alias iconItems: iconRepeater
 
@@ -337,30 +377,83 @@ BarWidget {
             renderType: Text.NativeRendering
           }
 
-          Row {
+          RowLayout {
             Layout.alignment: Qt.AlignCenter
+            // A plain Row top-aligns children, which would look off once
+            // a grouped icon's chip grows taller than its plain neighbours
+            // - RowLayout centers each child on the cross axis instead.
             spacing: Style.space(3)
-            visible: cell.shownToplevels.length > 0
+            visible: cell.shownGroups.length > 0
 
             Repeater {
               id: iconRepeater
               objectName: "iconRepeater"
-              model: cell.shownToplevels
+              model: cell.shownGroups
 
               Item {
                 id: iconSlot
                 objectName: "windowIcon"
+                // { key, toplevels: [...] } - a single window unless
+                // groupApps grouped it with others of the same app.
                 required property var modelData
-                readonly property var icon: root.iconForWindow(modelData)
-                readonly property string windowTitle: root.windowTitle(modelData)
+                readonly property var groupToplevels: modelData.toplevels
+                readonly property int count: groupToplevels.length
+
+                // Which of the group's windows is currently focused, if
+                // any - and, since Hyprland only ever reports one window as
+                // focused at a time, the last one this group had focused,
+                // remembered across the focus moving elsewhere (another
+                // workspace, another app). This is "the group's window" for
+                // both the icon and the tooltip: focused when there is one,
+                // else whichever was last, else just the first.
+                readonly property var focusedToplevel: {
+                  for (var i = 0; i < iconSlot.groupToplevels.length; i++) {
+                    if (iconSlot.groupToplevels[i].activated)
+                      return iconSlot.groupToplevels[i]
+                  }
+                  return null
+                }
+                property var lastFocusedToplevel: null
+                onFocusedToplevelChanged: {
+                  if (iconSlot.focusedToplevel)
+                    iconSlot.lastFocusedToplevel = iconSlot.focusedToplevel
+                }
+                readonly property var representativeToplevel: {
+                  if (iconSlot.focusedToplevel)
+                    return iconSlot.focusedToplevel
+                  if (iconSlot.lastFocusedToplevel && iconSlot.groupToplevels.indexOf(iconSlot.lastFocusedToplevel) !== -1)
+                    return iconSlot.lastFocusedToplevel
+                  return iconSlot.groupToplevels[0]
+                }
+
+                readonly property var icon: root.iconForWindow(iconSlot.representativeToplevel)
+                readonly property string windowTitle: root.groupTitle(iconSlot.groupToplevels)
+                // A corner circle over the icon can't fit a readable digit
+                // at the default 14px icon size without shrinking it to
+                // nothing. Instead, once grouped, the count sits next to
+                // the icon (not on top of it) in a pill-shaped chip, at the
+                // same readable size as the "+N" overflow label uses.
+                readonly property bool grouped: iconSlot.count >= 2
+                // The chip has to be bigger than a plain icon slot, not the
+                // same size: the icon inside it still needs to render at the
+                // full, un-shrunk iconSize, plus room for the count text and
+                // some padding so neither is jammed against the pill's edge.
+                // More padding sideways than vertically - a wide, shallow
+                // pill reads calmer than a tall one.
+                readonly property int chipVerticalPadding: Style.space(3)
+                readonly property int chipHorizontalPadding: Style.space(8)
                 // Bar.showTooltip only actually shows anything when the
                 // target it's given has this exact property (it checks
                 // `target.tooltipHovered === true` before doing anything) -
                 // see Tray.qml/WidgetButton.qml for the same pattern. Without
                 // it, showTooltip is a silent no-op: no error, no tooltip.
                 readonly property bool tooltipHovered: visible && opacity > 0 && iconMouseArea.containsMouse
-                width: root.iconSize
-                height: root.iconSize
+                // Sized directly off the icon and the count text - not off
+                // Row.implicitWidth, which lays out on a deferred polish
+                // pass and so wouldn't track an iconSize change in the same
+                // tick, unlike every other size in this widget.
+                width: iconSlot.grouped ? (root.iconSize + Style.space(3) + badgeText.implicitWidth + iconSlot.chipHorizontalPadding * 2) : root.iconSize
+                height: iconSlot.grouped ? root.iconSize + iconSlot.chipVerticalPadding * 2 : root.iconSize
 
                 // The tooltip text is a snapshot passed to bar.showTooltip,
                 // not a binding, so a title change (e.g. a browser tab
@@ -370,30 +463,74 @@ BarWidget {
                     root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
                 }
 
-                IconImage {
-                  objectName: "iconImage"
+                Rectangle {
+                  objectName: "groupBadge"
+                  visible: iconSlot.grouped
                   anchors.fill: parent
-                  implicitSize: root.iconSize
-                  asynchronous: true
-                  visible: iconSlot.icon.kind === "image"
-                  source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : ""
+                  radius: height / 2
+                  color: root.bar ? root.bar.background : Color.background
+                  // No border: a bordered pill is the same shape the
+                  // focused workspace label uses, so drawing one here would
+                  // make every group look selected regardless of which
+                  // workspace is actually focused. Just a fill, dimmer off
+                  // the focused workspace so it stays background info.
+                  opacity: cell.focused ? 1 : 0.3
                 }
 
-                Text {
-                  objectName: "iconText"
+                RowLayout {
+                  id: chipContent
                   anchors.centerIn: parent
-                  textFormat: Text.PlainText
-                  visible: iconSlot.icon.kind === "text"
-                  text: iconSlot.icon.kind === "text" ? iconSlot.icon.value : ""
-                  font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                  font.pixelSize: root.iconSize
-                  color: root.bar ? root.bar.barForeground : Color.foreground
-                  renderType: Text.NativeRendering
+                  // RowLayout rather than Row so the icon and the count text
+                  // are centered on top of each other despite their
+                  // different heights, instead of both sitting at y: 0.
+                  spacing: iconSlot.grouped ? Style.space(3) : 0
+
+                  Item {
+                    width: root.iconSize
+                    height: root.iconSize
+
+                    IconImage {
+                      objectName: "iconImage"
+                      anchors.fill: parent
+                      implicitSize: root.iconSize
+                      asynchronous: true
+                      visible: iconSlot.icon.kind === "image"
+                      source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : ""
+                    }
+
+                    Text {
+                      objectName: "iconText"
+                      anchors.centerIn: parent
+                      textFormat: Text.PlainText
+                      visible: iconSlot.icon.kind === "text"
+                      text: iconSlot.icon.kind === "text" ? iconSlot.icon.value : ""
+                      font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                      font.pixelSize: root.iconSize
+                      color: root.bar ? root.bar.barForeground : Color.foreground
+                      renderType: Text.NativeRendering
+                    }
+                  }
+
+                  Text {
+                    id: badgeText
+                    objectName: "groupBadgeText"
+                    visible: iconSlot.grouped
+                    textFormat: Text.PlainText
+                    text: String(iconSlot.count)
+                    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                    // Style.font.caption read as too small/faint next to the
+                    // icon it labels; root.iconSize was a shade too big -
+                    // 4px under it lands as legible without dominating.
+                    font.pixelSize: Math.max(6, root.iconSize - 4)
+                    color: root.bar ? root.bar.barForeground : Color.foreground
+                    renderType: Text.NativeRendering
+                  }
                 }
 
                 // Sits on top of the cell-wide workspaceMouseArea below it
                 // (declared first), so a click on the icon itself acts on
-                // that window instead of just focusing the workspace.
+                // that window - or, grouped, cycles through the group's
+                // windows - instead of just focusing the workspace.
                 MouseArea {
                   id: iconMouseArea
                   objectName: "windowIconMouseArea"
@@ -404,10 +541,12 @@ BarWidget {
                   onEntered: if (root.bar) root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
                   onExited: if (root.bar) root.bar.hideTooltip(iconSlot)
                   onClicked: function (mouse) {
-                    if (mouse.button === Qt.MiddleButton)
-                      root.closeWindow(iconSlot.modelData)
-                    else
-                      root.activateWindow(iconSlot.modelData)
+                    if (mouse.button === Qt.MiddleButton) {
+                      root.closeWindow(iconSlot.representativeToplevel)
+                    } else {
+                      var next = root.nextGroupToplevel(iconSlot.groupToplevels)
+                      root.activateWindow(next || iconSlot.representativeToplevel)
+                    }
                   }
                 }
               }

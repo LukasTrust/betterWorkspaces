@@ -1,0 +1,16 @@
+********* Start testing of qmltestrunner *********
+Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), omarchy 4.0.3
+PASS   : qmltestrunner::RowAlign::initTestCase()
+QDEBUG : qmltestrunner::RowAlign::test_alignment() qml: small y=0 h=14
+QDEBUG : qmltestrunner::RowAlign::test_alignment() qml: big y=0 h=20
+QDEBUG : qmltestrunner::RowAlign::test_alignment() qml: row height=20
+PASS   : qmltestrunner::RowAlign::test_alignment()
+PASS   : qmltestrunner::RowAlign::cleanupTestCase()
+PASS   : qmltestrunner::RowLayoutAlign::initTestCase()
+QDEBUG : qmltestrunner::RowLayoutAlign::test_alignment() qml: small y=3 h=14 w=14
+QDEBUG : qmltestrunner::RowLayoutAlign::test_alignment() qml: big y=0 h=20 w=20
+QDEBUG : qmltestrunner::RowLayoutAlign::test_alignment() qml: row height=20
+PASS   : qmltestrunner::RowLayoutAlign::test_alignment()
+PASS   : qmltestrunner::RowLayoutAlign::cleanupTestCase()
+Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 10ms
+********* Finished testing of qmltestrunner *********

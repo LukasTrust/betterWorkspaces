@@ -24,7 +24,8 @@
       "maxIcons": 5,
       "iconSize": 14,
       "minWorkspaces": 5,
-      "hideEmpty": false
+      "hideEmpty": false,
+      "groupApps": false
     }
   }
 }

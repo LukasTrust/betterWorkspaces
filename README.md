@@ -25,6 +25,13 @@ windows of the same app (e.g. two terminals) never repeat the lookup.
 - Clicking the workspace number or anywhere else in the cell still just
   focuses the workspace, same as before.
 
+With `groupApps` on, windows of the same app share one icon with a count
+badge once there are 2 or more. Hovering lists every window's title; left-
+click focuses the group's most recently focused window, and each further
+click steps to the next one. Middle-click closes the currently focused (or
+last-focused) window in the group. `maxIcons` and the `+N` overflow then
+count apps, not windows.
+
 ## Install
 
 ```bash
@@ -85,6 +92,7 @@ entry:
   "iconSize": 14,          // icon size in px
   "minWorkspaces": 5,      // workspaces shown even while empty, counted from 1
   "hideEmpty": false,      // show only workspaces with windows in them
+  "groupApps": false,      // one icon per app, with a count badge, instead of one per window
   "icons": {
     // Override the icon for a window class/appId. Value can be either an
     // icon-theme name or a literal glyph/emoji.

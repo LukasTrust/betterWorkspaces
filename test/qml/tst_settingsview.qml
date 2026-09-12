@@ -72,7 +72,7 @@ TestCase {
 
   function test_showsOneFieldPerSetting() {
     var view = createView()
-    var keys = ["maxIcons", "iconSize", "minWorkspaces", "hideEmpty"]
+    var keys = ["maxIcons", "iconSize", "minWorkspaces", "hideEmpty", "groupApps"]
     compare(findChild(view, "fieldRepeater").count, keys.length)
 
     for (var i = 0; i < keys.length; i++) {

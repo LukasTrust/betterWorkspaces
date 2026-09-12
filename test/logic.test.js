@@ -7,6 +7,7 @@ const {
   computeWindowKey,
   classifyIconValue,
   lookupIconOverride,
+  groupToplevels,
   clampSetting,
   SETTING_FIELDS,
   SETTING_DEFAULTS,
@@ -119,6 +120,54 @@ test("lookupIconOverride matches a key exactly, then case-insensitively", () => 
   assert.equal(lookupIconOverride({ firefox: "🦊" }, "Firefox"), "🦊")
   assert.equal(lookupIconOverride({ firefox: "🦊" }, "steam"), "")
   assert.equal(lookupIconOverride(null, "firefox"), "")
+})
+
+test("groupToplevels groups by key, in first-seen order, keeping every window", () => {
+  const code1 = { id: "code1" }
+  const firefox1 = { id: "firefox1" }
+  const code2 = { id: "code2" }
+  const keyOf = toplevel => ({ code1: "code", code2: "code", firefox1: "firefox" })[toplevel.id]
+
+  const groups = groupToplevels([code1, firefox1, code2], keyOf)
+
+  assert.deepEqual(groups.map(group => group.key), ["code", "firefox"])
+  assert.deepEqual(groups.map(group => group.toplevels), [[code1, code2], [firefox1]])
+})
+
+test("groupToplevels groups a window class case-insensitively", () => {
+  const lower = { id: "lower" }
+  const upper = { id: "upper" }
+  const keyOf = toplevel => (toplevel.id === "lower" ? "firefox" : "Firefox")
+
+  const groups = groupToplevels([lower, upper], keyOf)
+
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].key, "firefox")
+  assert.deepEqual(groups[0].toplevels, [lower, upper])
+})
+
+test("groupToplevels counts a group's windows", () => {
+  const windows = [{ id: 1 }, { id: 2 }, { id: 3 }]
+  const groups = groupToplevels(windows, () => "code")
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].toplevels.length, 3)
+})
+
+test("groupToplevels copes with nothing to group and an unusable key", () => {
+  assert.deepEqual(groupToplevels([], () => "code"), [])
+  assert.deepEqual(groupToplevels([{ id: 1 }], null), [{ key: "", toplevels: [{ id: 1 }] }])
+  assert.deepEqual(groupToplevels([{ id: 1 }], () => ""), [{ key: "", toplevels: [{ id: 1 }] }])
+})
+
+test("the +N overflow counts groups, not the windows inside them", () => {
+  const windows = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]
+  const keyOf = toplevel => (toplevel.id <= 3 ? "code" : "firefox")
+  const maxIcons = 1
+
+  const groups = groupToplevels(windows, keyOf)
+
+  assert.equal(groups.length, 2)
+  assert.equal(Math.max(0, groups.length - maxIcons), 1)
 })
 
 test("clampSetting keeps a usable number in range", () => {
