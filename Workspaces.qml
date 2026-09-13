@@ -258,6 +258,7 @@ BarWidget {
                 readonly property var icon: root.iconForWindow(modelData)
                 width: root.iconSize
                 height: root.iconSize
+                clip: true
 
                 IconImage {
                   anchors.fill: parent

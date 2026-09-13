@@ -27,10 +27,18 @@ function computeWindowKey(ipcClass, ipcInitialClass, waylandAppId) {
 // Turns a raw icon value (a user override or a DesktopEntry.icon) into
 // either a themed/file image source, or - if it doesn't resolve to an
 // icon-theme entry - plain text. This lets a user override with either an
-// icon-theme name or a literal glyph/emoji in shell.json.
-//
-// iconPathLookup(name) resolves a themed icon name to a source URL (or "" if
-// unresolved) - in the real widget this is Quickshell.iconPath.
+function isGlyphOrEmoji(text) {
+  var s = String(text || "").trim()
+  if (s.length === 0) return false
+  if (/^[a-zA-Z0-9_.-]+$/.test(s)) {
+    return s.length <= 2
+  }
+  return true
+}
+
+// Turns a raw icon value (a user override or a DesktopEntry.icon) into
+// either a themed/file image source, or - if it doesn't resolve to an
+// icon-theme entry - plain text (ONLY for literal glyphs or emojis).
 function classifyIconValue(value, iconPathLookup) {
   var text = String(value || "").trim()
   if (text.length === 0) return null
@@ -40,7 +48,8 @@ function classifyIconValue(value, iconPathLookup) {
     return { kind: "image", source: "file://" + text }
   var themed = iconPathLookup ? String(iconPathLookup(text) || "") : ""
   if (themed.length > 0) return { kind: "image", source: themed }
-  return { kind: "text", value: text }
+  if (isGlyphOrEmoji(text)) return { kind: "text", value: text }
+  return null
 }
 
 function lookupIconOverride(overrides, key, appHint, title) {

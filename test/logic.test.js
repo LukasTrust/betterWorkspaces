@@ -29,7 +29,7 @@ test("computeWindowKey prefers class, then initialClass, then the wayland appId"
   assert.equal(computeWindowKey("", "", ""), "")
 })
 
-test("classifyIconValue resolves images, else falls back to literal text", () => {
+test("classifyIconValue resolves images, else falls back to literal text only for glyphs/emojis", () => {
   const unresolvable = () => ""
 
   assert.equal(classifyIconValue("   ", unresolvable), null)
@@ -46,6 +46,10 @@ test("classifyIconValue resolves images, else falls back to literal text", () =>
     source: "themed:firefox"
   })
   assert.deepEqual(classifyIconValue("🦊", unresolvable), { kind: "text", value: "🦊" })
+  assert.deepEqual(classifyIconValue("󰨞", unresolvable), { kind: "text", value: "󰨞" })
+  assert.equal(classifyIconValue("google-chrome", unresolvable), null)
+  assert.equal(classifyIconValue("com.mitchellh.ghostty", unresolvable), null)
+  assert.equal(classifyIconValue("discord", unresolvable), null)
 })
 
 test("lookupIconOverride matches class, appHint, title prefixes, and regexes", () => {
