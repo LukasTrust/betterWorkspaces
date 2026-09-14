@@ -23,6 +23,11 @@ TestCase {
     Plugin.SettingsView {}
   }
 
+  Component {
+    id: storeComponent
+    Plugin.SetupStore {}
+  }
+
   SignalSpy {
     id: changedSpy
     signalName: "settingChanged"
@@ -57,13 +62,28 @@ TestCase {
     changedSpy.clear()
   }
 
-  function createView(settings) {
-    var view = createTemporaryObject(viewComponent, testCase, {
-      shell: fakeShell,
-      settings: settings || {}
-    })
+  function createView(settings, store) {
+    var props = { shell: fakeShell, settings: settings || {} }
+    if (store !== undefined) props.store = store
+    var view = createTemporaryObject(viewComponent, testCase, props)
     verify(view !== null, "settings view should be created")
     return view
+  }
+
+  function makeStore(setups) {
+    var store = createTemporaryObject(storeComponent, testCase)
+    findChild(store, "setupsFile").testSetContent(JSON.stringify({
+      schemaVersion: 1,
+      setups: setups || {}
+    }))
+    return store
+  }
+
+  function aSetup(bootWorkspace) {
+    return {
+      windows: [{ recipe: { type: "desktop-entry", id: "x" }, class: "x", floating: false, fullscreen: false, rect: { x: 0, y: 0, width: 1, height: 1 } }],
+      bootWorkspace: bootWorkspace === undefined ? null : bootWorkspace
+    }
   }
 
   function fieldInput(view, key) {
@@ -72,7 +92,7 @@ TestCase {
 
   function test_showsOneFieldPerSetting() {
     var view = createView()
-    var keys = ["maxIcons", "iconSize", "minWorkspaces", "hideEmpty", "groupApps", "gameIcons", "overviewEnabled"]
+    var keys = ["maxIcons", "iconSize", "minWorkspaces", "hideEmpty", "groupApps", "gameIcons", "overviewEnabled", "setupTargetMode", "focusAfterSetupDrop"]
     compare(findChild(view, "fieldRepeater").count, keys.length)
 
     for (var i = 0; i < keys.length; i++) {
@@ -131,6 +151,55 @@ TestCase {
       hideEmpty: "nonsense"
     })
     compare(fieldInput(view, "hideEmpty").checked, false)
+  }
+
+  // ---- the enum control (setupTargetMode) ------------------------------------
+
+  function optionButton(view, key, option) {
+    return findChild(findChild(view, "field-" + key), "option-" + option)
+  }
+
+  function test_showsOneOptionButtonPerEnumValue() {
+    var view = createView()
+    var row = fieldInput(view, "setupTargetMode")
+    compare(findChild(row, "optionRepeater").count, 2)
+    verify(optionButton(view, "setupTargetMode", "add") !== null)
+    verify(optionButton(view, "setupTargetMode", "replace") !== null)
+  }
+
+  function test_theCurrentEnumValueIsMarkedSelected() {
+    var view = createView({ setupTargetMode: "replace" })
+    verify(optionButton(view, "setupTargetMode", "replace").selected)
+    verify(!optionButton(view, "setupTargetMode", "add").selected)
+  }
+
+  function test_anUnusableEnumValueShowsTheDefaultAsSelected() {
+    var view = createView({ setupTargetMode: "overwrite-everything" })
+    verify(optionButton(view, "setupTargetMode", "add").selected)
+    verify(!optionButton(view, "setupTargetMode", "replace").selected)
+  }
+
+  function test_clickingAnOptionWritesTheEntryBack() {
+    var view = createView({ maxIcons: 3 })
+    mouseClick(optionButton(view, "setupTargetMode", "replace"))
+
+    compare(fakeShell.testWrites.length, 1)
+    compare(fakeShell.testWrites[0].settings, {
+      maxIcons: 3,
+      setupTargetMode: "replace"
+    })
+    verify(optionButton(view, "setupTargetMode", "replace").selected)
+    verify(!optionButton(view, "setupTargetMode", "add").selected)
+  }
+
+  function test_clickingAnOptionReportsTheChange() {
+    var view = createView()
+    changedSpy.target = view
+    mouseClick(optionButton(view, "setupTargetMode", "replace"))
+
+    compare(changedSpy.count, 1)
+    compare(changedSpy.signalArguments[0][0], "setupTargetMode")
+    compare(changedSpy.signalArguments[0][1], "replace")
   }
 
   function test_flippingASwitchReportsTheChange() {
@@ -210,6 +279,55 @@ TestCase {
     compare(changedSpy.count, 1)
     compare(changedSpy.signalArguments[0][0], "maxIcons")
     compare(changedSpy.signalArguments[0][1], 2)
+  }
+
+  // ---- boot workspace per setup ---------------------------------------------
+
+  function test_hidesTheBootSectionWithoutAStore() {
+    var view = createView()
+    verify(!findChild(view, "bootSection").visible)
+  }
+
+  function test_hidesTheBootSectionWithNoSetupsSaved() {
+    var view = createView({}, makeStore({}))
+    verify(!findChild(view, "bootSection").visible)
+  }
+
+  function test_showsOneRowPerSetupSortedByName() {
+    var store = makeStore({ Zeta: aSetup(3), Alpha: aSetup(null) })
+    var view = createView({}, store)
+    verify(findChild(view, "bootSection").visible)
+    compare(findChild(view, "bootRepeater").count, 2)
+    compare(view.setupNames, ["Alpha", "Zeta"])
+  }
+
+  function test_showsTheCurrentBootWorkspaceOrZeroForOff() {
+    var store = makeStore({ Work: aSetup(5), Games: aSetup(null) })
+    var view = createView({}, store)
+    compare(findChild(findChild(view, "boot-Work"), "bootField").value, 5)
+    compare(findChild(findChild(view, "boot-Games"), "bootField").value, 0)
+  }
+
+  function test_editingABootFieldWritesTheAssignmentBack() {
+    var store = makeStore({ Work: aSetup(null) })
+    var view = createView({}, store)
+
+    findChild(findChild(view, "boot-Work"), "bootField").testType(4)
+
+    compare(findChild(store, "setupsFile").testWrites.length, 1)
+    compare(store.setups.Work.bootWorkspace, 4)
+  }
+
+  // Assigning a workspace another setup already had takes it away from
+  // that one, rather than leaving two setups claiming the same slot.
+  function test_editingABootFieldClearsWhoeverElseHadThatWorkspace() {
+    var store = makeStore({ Work: aSetup(4), Games: aSetup(null) })
+    var view = createView({}, store)
+
+    findChild(findChild(view, "boot-Games"), "bootField").testType(4)
+
+    compare(store.setups.Games.bootWorkspace, 4)
+    compare(store.setups.Work.bootWorkspace, null)
   }
 
   function test_worksWithoutAShellToWriteTo() {

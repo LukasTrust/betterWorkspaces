@@ -17,8 +17,18 @@ Item {
   property string pluginId: "better-workspaces"
   // The widget's current shell.json entry, without its id.
   property var settings: ({})
+  // The shared setup store (Overlay.qml owns the one instance) - lets this
+  // form double as where each setup's boot workspace is assigned, since
+  // that's per-setup, not a plugin-wide setting `SETTING_FIELDS` could hold.
+  property var store: null
 
   signal settingChanged(string key, var value)
+
+  readonly property var setupNames: {
+    var names = []
+    if (root.store) for (var key in root.store.setups) names.push(key)
+    return names.sort()
+  }
 
   implicitWidth: layout.implicitWidth
   implicitHeight: layout.implicitHeight
@@ -110,12 +120,126 @@ Item {
           }
         }
 
+        // A row of small buttons, one per option - the only field type with
+        // more than two possible values, so a switch doesn't fit it.
+        Component {
+          id: enumControl
+
+          RowLayout {
+            objectName: "fieldInput"
+            spacing: Style.spacing.xs
+
+            Repeater {
+              objectName: "optionRepeater"
+              model: row.modelData.options
+
+              Rectangle {
+                id: option
+                objectName: "option-" + modelData
+                required property string modelData
+                readonly property bool selected: root.valueOf(row.modelData.key) === modelData
+
+                implicitWidth: optionLabel.implicitWidth + Style.spacing.controlPaddingX * 2
+                implicitHeight: optionLabel.implicitHeight + Style.spacing.controlPaddingY * 2
+                radius: Style.cornerRadius
+                color: option.selected ? Color.accent : "transparent"
+                border.width: Math.max(1, Style.space(1))
+                border.color: option.selected ? Color.accent : Color.menu.border
+
+                Text {
+                  id: optionLabel
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: option.modelData
+                  color: option.selected ? Color.menu.background : Color.menu.text
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.change(row.modelData.key, option.modelData)
+                }
+              }
+            }
+          }
+        }
+
         Loader {
-          readonly property bool isSwitch: row.modelData.type === "boolean"
+          readonly property string kind: row.modelData.type
 
           Layout.alignment: Qt.AlignVCenter
-          Layout.preferredWidth: isSwitch ? implicitWidth : Style.spacing.numberFieldWidth
-          sourceComponent: isSwitch ? switchControl : numberControl
+          Layout.preferredWidth: kind === "integer" ? Style.spacing.numberFieldWidth : implicitWidth
+          sourceComponent: kind === "boolean" ? switchControl : (kind === "enum" ? enumControl : numberControl)
+        }
+      }
+    }
+
+    // Nothing to show without a store to read, or without a single setup
+    // saved yet - an empty section header with nothing under it would just
+    // be noise.
+    ColumnLayout {
+      objectName: "bootSection"
+      visible: root.setupNames.length > 0
+      Layout.fillWidth: true
+      spacing: Style.spacing.xxs
+
+      Text {
+        objectName: "bootSectionTitle"
+        textFormat: Text.PlainText
+        text: "Open on boot"
+        color: Color.menu.text
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+      }
+
+      Text {
+        objectName: "bootSectionHint"
+        textFormat: Text.PlainText
+        text: "0 turns it off. At most one setup per workspace - assigning one here takes it away from whichever setup already had it."
+        color: Color.menu.text
+        opacity: 0.7
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+      }
+
+      Repeater {
+        objectName: "bootRepeater"
+        model: root.setupNames
+
+        RowLayout {
+          id: bootRow
+          required property string modelData
+
+          objectName: "boot-" + bootRow.modelData
+          Layout.fillWidth: true
+          spacing: Style.spacing.lg
+
+          Text {
+            textFormat: Text.PlainText
+            text: bootRow.modelData
+            color: Color.menu.text
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            Layout.fillWidth: true
+            elide: Text.ElideRight
+          }
+
+          NumberField {
+            objectName: "bootField"
+            value: (root.store.setups[bootRow.modelData] && root.store.setups[bootRow.modelData].bootWorkspace) || 0
+            from: 0
+            to: 10
+            stepSize: 1
+            foreground: Color.menu.text
+            Layout.preferredWidth: Style.spacing.numberFieldWidth
+            onModified: function (value) {
+              root.store.replaceAll(Logic.assignBootWorkspace(root.store.setups, bootRow.modelData, value))
+            }
+          }
         }
       }
     }

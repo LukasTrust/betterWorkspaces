@@ -24,8 +24,11 @@ QtObject {
 
   readonly property QtObject spacing: QtObject {
     readonly property int xxs: 2
+    readonly property int xs: 3
     readonly property int md: 6
     readonly property int lg: 8
+    readonly property int controlPaddingX: 10
+    readonly property int controlPaddingY: 6
     readonly property int panelPadding: 18
     readonly property int controlHeight: 28
     readonly property int numberFieldWidth: 120

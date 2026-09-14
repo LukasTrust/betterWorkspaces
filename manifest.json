@@ -10,6 +10,7 @@
     "bar-widget",
     "overlay"
   ],
+  "keepLoaded": true,
   "entryPoints": {
     "barWidget": "Workspaces.qml",
     "overlay": "Overlay.qml"
@@ -27,7 +28,9 @@
       "hideEmpty": false,
       "groupApps": false,
       "gameIcons": true,
-      "overviewEnabled": true
+      "overviewEnabled": true,
+      "setupTargetMode": "add",
+      "focusAfterSetupDrop": true
     }
   }
 }

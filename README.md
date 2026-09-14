@@ -80,6 +80,8 @@ again, as do `Esc` and a click past the cards.
 
 - **Click a window** to go straight to it - the right workspace and the right
   window in one - and the overview closes behind you.
+- **Middle-click a window** to close it, same as in the bar. The overview
+  stays open.
 - **Click anywhere else on a card** to go to that workspace; the overview
   closes too.
 - **Drag a window onto another card** to move it there. The focus stays where
@@ -100,6 +102,36 @@ again, as do `Esc` and a click past the cards.
   They stay on screen, previews and all, because most of the settings change
   what the overview shows - `Esc` there goes back to them rather than closing
   everything.
+- **The save icon in a card's top-left corner** saves that workspace - its
+  open windows, ready to reopen later. Not necessarily the one you're on:
+  each card saves itself. Same `Esc`-goes-back behaviour as the gear.
+
+### Saved setups
+
+Once you've saved at least one, a strip of them sits along the bottom of the
+overview - a small icon per app plus the name.
+
+- **Click one** to open it on whichever workspace was active when you opened
+  the overview, and close the overview.
+- **Drag one onto a workspace card** to open it there instead, or onto `+`
+  for a new workspace. Whether that closes the overview and switches you
+  there depends on `focusAfterSetupDrop` (on by default) - off leaves you
+  where you were, with the overview still open, while the new windows appear
+  on the card. Rebuilding the layout still needs focus on the target
+  workspace while it's happening either way, so with the setting off you'll
+  see a brief jump over there and back.
+- **If the target workspace already has windows on it**, `setupTargetMode`
+  decides what happens: `add` (the default) opens the setup's windows
+  alongside what's there; `replace` closes the existing ones first with a
+  normal close request (never a kill), so an app that wants to ask "save
+  changes?" still gets to.
+- **The × in a chip's corner** deletes it, after asking you to confirm.
+
+Reopening a setup replays each window's own launch recipe (its installed
+app, or the exact command line if it isn't one) and rebuilds the left/right,
+top/bottom split it was saved with. Sizes land on Hyprland's own default
+split ratio rather than the exact proportions you saved - and the layout is
+only exact on an empty workspace; dropped onto a busy one, it's best-effort.
 
 ### Previews
 
@@ -164,6 +196,12 @@ anything unusable falls back to the default.
 `Esc`, or a click outside the card, closes the editor - or, when you got
 there through the overview's gear, steps back to the overview so you can see
 what your change did.
+
+Below the settings, once you've saved at least one setup, is a field per
+setup for which workspace it should open on at boot (`0` for none - not yet
+acted on; opening automatically at boot isn't implemented yet, this only
+records the assignment). Giving one a workspace another setup already had
+takes it away from that one - only one setup can claim a given workspace.
 
 ### shell.json
 

@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Widgets
 import qs.Commons
+import qs.Ui
 
 import "logic.js" as Logic
 
@@ -20,12 +21,16 @@ import "logic.js" as Logic
 Item {
   id: root
 
-  // The scoped shell facade the overlay was handed; unused so far, but the
-  // saved setups in the next feature are read and written through it.
+  // The scoped shell facade the overlay was handed; unused so far.
   property var shell: null
   // This widget's shell.json entry, so the overview shows the same
   // workspaces and the same icons the bar does.
   property var settings: ({})
+  // The shared setup store and opener (Overlay.qml owns the one instance of
+  // each) - what the setups strip lists and drags from, and what actually
+  // opens one.
+  property var store: null
+  property var opener: null
   // False while the overlay is hidden: tears every screencopy down, so
   // nothing is captured off the screen in the background.
   property bool active: false
@@ -37,6 +42,9 @@ Item {
 
   signal closeRequested
   signal settingsRequested
+  // A workspace's own save button, not the gear - which workspace is on the
+  // caller, since it isn't necessarily the focused one.
+  signal saveRequested(int workspaceId)
   // Emitted for every Hyprland request, so the tests can read what a click
   // or a drop actually asked for.
   signal dispatched(string request)
@@ -44,6 +52,101 @@ Item {
   readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", Logic.settingValue(root.settings, "minWorkspaces"))
   readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", Logic.settingValue(root.settings, "hideEmpty"))
   readonly property bool gameIcons: Logic.clampSetting("gameIcons", Logic.settingValue(root.settings, "gameIcons"))
+  readonly property string setupTargetMode: Logic.clampSetting("setupTargetMode", Logic.settingValue(root.settings, "setupTargetMode"))
+  readonly property bool focusAfterSetupDrop: Logic.clampSetting("focusAfterSetupDrop", Logic.settingValue(root.settings, "focusAfterSetupDrop"))
+
+  // ---- saved setups ---------------------------------------------------------
+
+  readonly property var setupNames: {
+    var names = []
+    if (root.store) for (var key in root.store.setups) names.push(key)
+    return names.sort()
+  }
+
+  // The workspace a click opens a setup on - captured once when the
+  // overview opens, not read live, so it can't drift if focus moves while
+  // the overview is up.
+  property int openedOnWorkspaceId: 0
+
+  function monitorAreaFor(workspaceId) {
+    return root.monitorRect(root.monitorFor(workspaceId))
+  }
+
+  // Which of a workspace's current windows `setupTargetMode: "replace"`
+  // closes, worked out by `Logic.planSetupOpen` - a plain `close()` each,
+  // never a kill, same as the bar and this view's own middle-click.
+  function closeExisting(targets, mode) {
+    var addresses = Logic.planSetupOpen(targets, mode)
+    for (var i = 0; i < targets.length; i++)
+      if (addresses.indexOf(String(targets[i].address)) !== -1)
+        root.closeWindow(targets[i])
+  }
+
+  // > 0 while a drop's `focusAfterSetupDrop: false` owes a jump back to
+  // wherever focus was before the drop - building the setup's layout still
+  // needs focus on the target throughout, preselect has no other way to
+  // know which window to split.
+  property int _returnFocusId: 0
+
+  // Opens `name` on `workspaceId`. `fromDrop` is false for a click (which
+  // always opens where you already are and always closes the overview) and
+  // true for a drag-drop (governed by `focusAfterSetupDrop` instead).
+  function openSetup(name, workspaceId, fromDrop) {
+    if (!root.store || !root.opener || workspaceId <= 0)
+      return
+    var setup = root.store.setups[name]
+    if (!setup)
+      return
+
+    var targets = root.toplevelsOf(workspaceId)
+    if (root.setupTargetMode === "replace")
+      root.closeExisting(targets, root.setupTargetMode)
+
+    var cameFrom = root.focusedId
+    root.focusWorkspace(workspaceId)
+    root._returnFocusId = (fromDrop && !root.focusAfterSetupDrop && cameFrom !== workspaceId) ? cameFrom : 0
+
+    root.opener.open(setup, root.monitorAreaFor(workspaceId))
+  }
+
+  function openSetupFromChip(name) {
+    root.openSetup(name, root.openedOnWorkspaceId, false)
+    root.beginClose()
+  }
+
+  function dropSetup(name, workspaceId) {
+    root.openSetup(name, workspaceId, true)
+    if (root.focusAfterSetupDrop)
+      root.beginClose()
+  }
+
+  Connections {
+    target: root.opener
+    function onFinished(completed) {
+      if (root._returnFocusId > 0) {
+        root.focusWorkspace(root._returnFocusId)
+        root._returnFocusId = 0
+      }
+    }
+  }
+
+  // ---- deleting a setup -------------------------------------------------
+
+  property string pendingDeleteName: ""
+
+  function requestDeleteSetup(name) {
+    root.pendingDeleteName = name
+  }
+
+  function confirmDeleteSetup() {
+    if (root.store && root.pendingDeleteName.length > 0)
+      root.store.remove(root.pendingDeleteName)
+    root.pendingDeleteName = ""
+  }
+
+  function cancelDeleteSetup() {
+    root.pendingDeleteName = ""
+  }
 
   // ---- what Hyprland has --------------------------------------------------
 
@@ -190,6 +293,13 @@ Item {
     root.beginClose()
   }
 
+  // Same close as the bar's middle-click on an icon: just the window, the
+  // overview stays open.
+  function closeWindow(toplevel) {
+    if (toplevel && toplevel.wayland)
+      toplevel.wayland.close()
+  }
+
   // Hyprland can't renumber a workspace, so a card dragged onto another one
   // moves the windows instead; logic.js works out which window ends up where
   // before any of them moves.
@@ -237,6 +347,7 @@ Item {
   onActiveChanged: {
     if (root.active) {
       root.closing = false
+      root.openedOnWorkspaceId = root.focusedId
       root.refreshGeometry()
       root.grabKeys()
     }
@@ -284,6 +395,10 @@ Item {
 
   readonly property int gap: Style.space(24)
   readonly property int captionHeight: Style.space(30)
+  // Room for a row of setup chips along the bottom - nothing reserved when
+  // there aren't any, so the workspace cards use the full screen exactly as
+  // before until something is actually saved.
+  readonly property int setupsStripHeight: root.setupNames.length > 0 ? Style.space(96) : 0
 
   // One cell per workspace plus one for the "+" card. A card is the shape of
   // the screen its workspace is on, so the windows drawn on it are the shape
@@ -305,7 +420,7 @@ Item {
   // them, which is exactly what a screen full of workspace cards needs.
   readonly property var layout: Logic.spreadLayout(root.cellSizes, {
     width: Math.max(0, root.width - root.gap * 2),
-    height: Math.max(0, root.height - root.gap * 2)
+    height: Math.max(0, root.height - root.gap * 2 - root.setupsStripHeight)
   }, {
     spacing: root.gap,
     captionHeight: root.captionHeight
@@ -355,6 +470,11 @@ Item {
   readonly property var settingsIcon: {
     var themed = Quickshell.iconPath("preferences-system", true)
     return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\u2699" }
+  }
+
+  readonly property var saveIcon: {
+    var themed = Quickshell.iconPath("document-save", true)
+    return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\ud83d\udcbe" }
   }
 
   // Omarchy keeps a symlink pointing at the background in use; following it
@@ -484,6 +604,7 @@ Item {
       objectName: "workspaceGrid"
       anchors.fill: parent
       anchors.margins: root.gap
+      anchors.bottomMargin: root.gap + root.setupsStripHeight
 
       Repeater {
         id: cardRepeater
@@ -625,6 +746,7 @@ Item {
                     objectName: "windowMouseArea"
                     anchors.fill: parent
                     hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                     cursorShape: Qt.PointingHandCursor
                     drag.target: windowDragHandle
                     drag.threshold: Style.space(8)
@@ -632,7 +754,12 @@ Item {
                       root.selectedIndex = card.index
                       card.dragging = true
                     }
-                    onClicked: root.openWindow(windowSlot.modelData)
+                    onClicked: function (mouse) {
+                      if (mouse.button === Qt.MiddleButton)
+                        root.closeWindow(windowSlot.modelData)
+                      else
+                        root.openWindow(windowSlot.modelData)
+                    }
                     onReleased: {
                       windowDragHandle.Drag.drop()
                       windowDragHandle.x = 0
@@ -642,6 +769,68 @@ Item {
                   }
                 }
               }
+            }
+          }
+
+          // A workspace's own save button, in its corner - the gear top-right
+          // of the whole screen is for this plugin's settings, not for saving
+          // one particular workspace. Declared after the window layer, same
+          // reasoning as the gear: it has to stay clickable no matter what a
+          // busy card is showing underneath it.
+          Rectangle {
+            id: saveButton
+            objectName: "saveButton"
+            anchors.top: cardSurface.top
+            anchors.left: cardSurface.left
+            anchors.margins: Math.max(Style.space(6), Math.min(cardSurface.width, cardSurface.height) * 0.03)
+            z: 1
+            readonly property int size: Math.round(Math.max(Style.space(22), Math.min(cardSurface.width, cardSurface.height) * 0.12))
+            width: size
+            height: size
+            radius: width / 2
+            color: Color.menu.background
+            border.width: Math.max(1, Style.space(2))
+            border.color: saveArea.containsMouse ? Color.bar.active : Color.menu.border
+            opacity: root.closing || !root.active ? 0 : (saveArea.containsMouse ? 1 : 0.75)
+
+            Behavior on opacity {
+              NumberAnimation {
+                duration: root.animationDuration
+                easing.type: Easing.OutCubic
+              }
+            }
+
+            // A themed icon rather than a Nerd Font glyph, same reasoning as
+            // the settings gear: a bar font with no such glyph would draw a
+            // tofu box instead. A floppy disk is the fallback.
+            IconImage {
+              objectName: "saveIcon"
+              anchors.centerIn: parent
+              implicitSize: Math.round(parent.width * 0.55)
+              width: implicitSize
+              height: implicitSize
+              asynchronous: true
+              visible: root.saveIcon.kind === "image"
+              source: root.saveIcon.kind === "image" ? root.saveIcon.source : ""
+            }
+
+            Text {
+              objectName: "saveGlyph"
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              visible: root.saveIcon.kind === "text"
+              text: root.saveIcon.kind === "text" ? root.saveIcon.value : ""
+              font.family: Style.font.family
+              font.pixelSize: Math.round(saveButton.width * 0.55)
+            }
+
+            MouseArea {
+              id: saveArea
+              objectName: "saveMouseArea"
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.saveRequested(card.modelData)
             }
           }
 
@@ -663,6 +852,9 @@ Item {
                 drop.accept()
               } else if (payload.kind === "workspace") {
                 root.reorderWorkspaces(payload.index, card.index)
+                drop.accept()
+              } else if (payload.kind === "setup") {
+                root.dropSetup(payload.name, card.modelData)
                 drop.accept()
               }
             }
@@ -789,13 +981,209 @@ Item {
           height: addSurface.height
           onDropped: function (drop) {
             var payload = root.payloadOf(drop)
-            if (!payload || payload.kind !== "window" || !addCard.available)
+            if (!payload || !addCard.available)
               return
-            root.moveWindowToWorkspace(payload.toplevel, root.newWorkspaceId)
+            if (payload.kind === "window") {
+              root.moveWindowToWorkspace(payload.toplevel, root.newWorkspaceId)
+              drop.accept()
+              return
+            }
+            if (payload.kind !== "setup")
+              return
+            root.dropSetup(payload.name, root.newWorkspaceId)
             drop.accept()
           }
         }
       }
+    }
+
+    // A row of saved setups along the bottom, each draggable onto a
+    // workspace card or "+". Only takes screen space once something is
+    // actually saved.
+    Item {
+      id: setupsStrip
+      objectName: "setupsStrip"
+      visible: root.setupNames.length > 0
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.margins: root.gap
+      height: root.setupsStripHeight
+
+      Row {
+        anchors.fill: parent
+        spacing: Style.space(10)
+
+        Repeater {
+          id: setupChipRepeater
+          objectName: "setupChipRepeater"
+          model: root.setupNames
+
+          Item {
+            id: chipSlot
+            objectName: "setupChipSlot-" + chipSlot.modelData
+            required property string modelData
+
+            width: Style.space(150)
+            height: setupsStrip.height
+
+            readonly property var setupEntry: root.store ? root.store.setups[chipSlot.modelData] : null
+            readonly property var setupWindowClasses: {
+              var list = []
+              var windows = (chipSlot.setupEntry && chipSlot.setupEntry.windows) || []
+              for (var i = 0; i < windows.length && i < 6; i++)
+                list.push(windows[i].class)
+              return list
+            }
+
+            // The thing that actually moves under the pointer while
+            // dragging; the slot itself stays put, same pattern as a
+            // window or a workspace card.
+            Item {
+              id: chipHandle
+              objectName: "setupChipHandle"
+              width: chipSlot.width
+              height: chipSlot.height
+
+              property var payload: ({
+                  kind: "setup",
+                  name: chipSlot.modelData
+                })
+
+              Drag.active: chipArea.drag.active
+              Drag.source: chipHandle
+              Drag.hotSpot.x: width / 2
+              Drag.hotSpot.y: height / 2
+
+              Rectangle {
+                id: chipSurface
+                objectName: "setupChipSurface"
+                anchors.fill: parent
+                radius: Style.cornerRadius
+                color: Color.menu.background
+                border.width: Math.max(1, Style.space(2))
+                border.color: chipArea.containsMouse ? Color.bar.active : Color.menu.border
+
+                Column {
+                  anchors.centerIn: parent
+                  spacing: Style.space(4)
+
+                  Text {
+                    objectName: "setupChipName"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    textFormat: Text.PlainText
+                    text: chipSlot.modelData
+                    color: Color.menu.text
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, chipSlot.width - Style.space(16))
+                  }
+
+                  Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Style.space(3)
+
+                    Repeater {
+                      objectName: "setupChipIconRepeater"
+                      model: chipSlot.setupWindowClasses
+
+                      Item {
+                        id: iconSlot
+                        required property string modelData
+                        width: Style.space(14)
+                        height: Style.space(14)
+
+                        readonly property var icon: iconResolver.iconForKey(iconSlot.modelData)
+
+                        IconImage {
+                          anchors.fill: parent
+                          implicitSize: parent.width
+                          asynchronous: true
+                          visible: iconSlot.icon.kind === "image"
+                          source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : ""
+                        }
+
+                        Text {
+                          anchors.centerIn: parent
+                          textFormat: Text.PlainText
+                          visible: iconSlot.icon.kind === "text"
+                          text: iconSlot.icon.kind === "text" ? iconSlot.icon.value : ""
+                          font.family: Style.font.family
+                          font.pixelSize: iconSlot.width
+                          color: Color.menu.text
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            MouseArea {
+              id: chipArea
+              objectName: "setupChipMouseArea"
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              drag.target: chipHandle
+              drag.threshold: Style.space(8)
+              onClicked: root.openSetupFromChip(chipSlot.modelData)
+              onReleased: {
+                chipHandle.Drag.drop()
+                chipHandle.x = 0
+                chipHandle.y = 0
+              }
+            }
+
+            // Declared last so it stays clickable over the chip's own
+            // drag/click area, same reasoning as every other corner button
+            // here.
+            Rectangle {
+              id: deleteButton
+              objectName: "setupDeleteButton"
+              anchors.top: parent.top
+              anchors.right: parent.right
+              anchors.margins: Style.space(4)
+              width: Style.space(20)
+              height: Style.space(20)
+              radius: width / 2
+              color: deleteArea.containsMouse ? Color.urgent : Color.menu.background
+              border.width: Math.max(1, Style.space(1))
+              border.color: Color.menu.border
+
+              Text {
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: "×"
+                color: Color.menu.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+              }
+
+              MouseArea {
+                id: deleteArea
+                objectName: "setupDeleteMouseArea"
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.requestDeleteSetup(chipSlot.modelData)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    ConfirmDialog {
+      id: deleteConfirm
+      objectName: "deleteConfirmDialog"
+      anchors.fill: parent
+      opened: root.pendingDeleteName.length > 0
+      message: "Delete “" + root.pendingDeleteName + "”? This can't be undone."
+      confirmText: "Delete"
+      onConfirmed: root.confirmDeleteSetup()
+      onCanceled: root.cancelDeleteSetup()
     }
   }
 }

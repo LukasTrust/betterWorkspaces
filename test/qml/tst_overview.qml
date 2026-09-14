@@ -49,6 +49,16 @@ TestCase {
     HyprlandMonitor {}
   }
 
+  Component {
+    id: storeComponent
+    Plugin.SetupStore {}
+  }
+
+  Component {
+    id: openerComponent
+    Plugin.SetupOpener { timeoutMs: 30; settleMs: 1 }
+  }
+
   SignalSpy {
     id: closeSpy
     signalName: "closeRequested"
@@ -135,14 +145,42 @@ TestCase {
     return { monitor: monitor, first: first, second: second, third: third }
   }
 
-  function createOverview(settings) {
-    var view = createTemporaryObject(overviewComponent, testCase, {
+  function makeStore(setups) {
+    var store = createTemporaryObject(storeComponent, testCase)
+    findChild(store, "setupsFile").testSetContent(JSON.stringify({
+      schemaVersion: 1,
+      setups: setups || {}
+    }))
+    return store
+  }
+
+  function makeOpener() {
+    return createTemporaryObject(openerComponent, testCase)
+  }
+
+  function anArgvSetup(argv, windowClass) {
+    return {
+      windows: [{
+        recipe: { type: "argv", argv: argv },
+        class: windowClass || "x",
+        floating: false,
+        fullscreen: false,
+        rect: { x: 0, y: 0, width: 1, height: 1 }
+      }]
+    }
+  }
+
+  function createOverview(settings, extra) {
+    var props = {
       shell: fakeShell,
       settings: settings || {},
       width: testCase.width,
       height: testCase.height,
       active: true
-    })
+    }
+    var overrides = extra || {}
+    for (var key in overrides) props[key] = overrides[key]
+    var view = createTemporaryObject(overviewComponent, testCase, props)
     verify(view !== null, "overview should be created")
     // The opening animation is running; wait it out so positions are final.
     wait(view.animationDuration + 60)
@@ -479,6 +517,25 @@ TestCase {
     tryCompare(closeSpy, "count", 1)
   }
 
+  // Same middle-click-to-close the bar's icons already have, so closing a
+  // window doesn't require focusing it first. The overview stays open - it
+  // is the workspace layout, not the window, that middle-click acts on.
+  function test_middleClickingAWindowClosesItAndKeepsTheOverviewOpen() {
+    var fixture = threeWorkspaces()
+    var view = createOverview()
+    closeSpy.target = view
+
+    var editor = fixture.second.toplevels.values[1]
+    var terminal = fixture.first.toplevels.values[0]
+    var slot = findChild(cardWindow(view, 2, 1), "windowMouseArea")
+    mouseClick(slot, slot.width / 2, slot.height / 2, Qt.MiddleButton)
+
+    compare(editor.wayland.testCloseCalls, 1)
+    compare(terminal.wayland.testCloseCalls, 0)
+    compare(Hyprland.testDispatched, [])
+    compare(closeSpy.count, 0)
+  }
+
   // A window on a card you are not on: clicking it goes straight there,
   // workspace and window in one. The wlr activate request would not do that
   // - it marks the window active and leaves you on the workspace you were
@@ -651,6 +708,226 @@ TestCase {
     verify(findChild(view, "settingsGlyph").visible)
     compare(findChild(view, "settingsGlyph").text, "\u2699")
     verify(!findChild(view, "settingsIcon").visible)
+  }
+
+  // ---- each workspace's own save button --------------------------------------
+
+  // Every card gets its own button - not just the focused workspace's - so
+  // saving one doesn't require switching to it first.
+  function test_everyCardHasItsOwnSaveButtonAndReportsItsOwnWorkspace() {
+    threeWorkspaces()
+    var view = createOverview()
+    var asked = createTemporaryObject(spyComponent, testCase, {
+      target: view,
+      signalName: "saveRequested"
+    })
+
+    mouseClick(findChild(cardFor(view, 1), "saveMouseArea"))
+    compare(asked.count, 1)
+    compare(asked.signalArguments[0][0], 1)
+
+    mouseClick(findChild(cardFor(view, 3), "saveMouseArea"))
+    compare(asked.count, 2)
+    compare(asked.signalArguments[1][0], 3)
+  }
+
+  // Asking to save is not leaving, same as the gear: the overlay keeps the
+  // cards on screen and doesn't switch workspace either - clicking a save
+  // button is not the same as clicking the rest of the card.
+  function test_theSaveButtonDoesNotCloseOrSwitchWorkspace() {
+    var fixture = threeWorkspaces()
+    var view = createOverview()
+    closeSpy.target = view
+
+    mouseClick(findChild(cardFor(view, 1), "saveMouseArea"))
+    compare(closeSpy.count, 0)
+    compare(Hyprland.testDispatched, [])
+  }
+
+  function test_theSaveButtonShowsAThemedIconWhenThereIsOne() {
+    Quickshell.testThemeIcons = {
+      "application-x-executable": "image://test/application-x-executable",
+      "document-save": "image://test/document-save"
+    }
+    threeWorkspaces()
+    var view = createOverview()
+    var button = cardFor(view, 1)
+    verify(findChild(button, "saveIcon").visible)
+    compare(findChild(button, "saveIcon").source, "image://test/document-save")
+    verify(!findChild(button, "saveGlyph").visible)
+  }
+
+  // Same reasoning as the gear: a Nerd Font glyph would silently render as a
+  // tofu box on a theme font that doesn't carry one.
+  function test_theSaveButtonFallsBackToAFloppyDiskCharacter() {
+    threeWorkspaces()
+    var view = createOverview()
+    var button = cardFor(view, 1)
+    verify(findChild(button, "saveGlyph").visible)
+    compare(findChild(button, "saveGlyph").text, "💾")
+    verify(!findChild(button, "saveIcon").visible)
+  }
+
+  // ---- the setups strip -------------------------------------------------------
+
+  function chipFor(view, name) {
+    return findChild(view, "setupChipSlot-" + name)
+  }
+
+  function test_noStripWithoutAnySavedSetups() {
+    threeWorkspaces()
+    var view = createOverview()
+    verify(!findChild(view, "setupsStrip").visible)
+  }
+
+  function test_showsOneChipPerSavedSetupSortedByName() {
+    threeWorkspaces()
+    var store = makeStore({ Zeta: anArgvSetup(["z"]), Alpha: anArgvSetup(["a"]) })
+    var view = createOverview({}, { store: store })
+
+    verify(findChild(view, "setupsStrip").visible)
+    compare(findChild(view, "setupChipRepeater").count, 2)
+    verify(chipFor(view, "Alpha") !== null)
+    verify(chipFor(view, "Zeta") !== null)
+  }
+
+  function test_clickingAChipOpensItOnTheWorkspaceActiveWhenOverviewOpened() {
+    threeWorkspaces() // focused workspace is 2
+    var store = makeStore({ Work: anArgvSetup(["some-tool", "--flag"]) })
+    var opener = makeOpener()
+    var view = createOverview({}, { store: store, opener: opener })
+    closeSpy.target = view
+
+    mouseClick(chipFor(view, "Work"))
+
+    // Already on workspace 2 - nothing to focus, but the setup still opens.
+    compare(Hyprland.testDispatched, [])
+    compare(Quickshell.testExecuted, [["some-tool", "--flag"]])
+    tryCompare(closeSpy, "count", 1)
+  }
+
+  function test_draggingAChipOntoACardOpensItThere() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({}, { store: store, opener: opener })
+    closeSpy.target = view
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
+
+    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(Quickshell.testExecuted, [["some-tool"]])
+    // Default focusAfterSetupDrop is true.
+    tryCompare(closeSpy, "count", 1)
+  }
+
+  function test_draggingAChipOntoPlusOpensOnANewWorkspace() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({}, { store: store, opener: opener })
+    compare(view.newWorkspaceId, 6)
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), findChild(view, "addWorkspaceCard"))
+
+    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"6\" })"])
+    compare(Quickshell.testExecuted, [["some-tool"]])
+  }
+
+  // The default: dropping a setup onto an occupied workspace adds its
+  // windows alongside the existing ones, closing nothing.
+  function test_addModeDropsAlongsideExistingWindowsByDefault() {
+    var fixture = threeWorkspaces() // workspace 2 already has two windows
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({}, { store: store, opener: opener })
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
+
+    compare(fixture.second.toplevels.values[0].wayland.testCloseCalls, 0)
+    compare(fixture.second.toplevels.values[1].wayland.testCloseCalls, 0)
+  }
+
+  function test_replaceModeClosesTheExistingWindowsFirst() {
+    var fixture = threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({ setupTargetMode: "replace" }, { store: store, opener: opener })
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
+
+    compare(fixture.second.toplevels.values[0].wayland.testCloseCalls, 1)
+    compare(fixture.second.toplevels.values[1].wayland.testCloseCalls, 1)
+    compare(Quickshell.testExecuted, [["some-tool"]])
+  }
+
+  // Building the layout needs focus on the target workspace throughout -
+  // preselect has no other way to know what to split - so `false` only
+  // means the focus jumps back once the setup has finished opening, not
+  // that it never moves at all.
+  function test_focusAfterSetupDropFalseJumpsBackOnceItFinishesOpening() {
+    var fixture = threeWorkspaces() // focused workspace is 2
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({ focusAfterSetupDrop: false }, { store: store, opener: opener })
+    closeSpy.target = view
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
+    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(closeSpy.count, 0)
+
+    // The compositor answers the focus dispatch above - the stub doesn't
+    // simulate that on its own, so it's set directly, the same as a real
+    // Hyprland would have already done by the time a launched window maps.
+    Hyprland.focusedWorkspace = fixture.third
+
+    // The launched window appears - the plan (one window, no preselect)
+    // finishes, and only now does the jump back happen.
+    var launched = createTemporaryObject(toplevelComponent, testCase, { address: "deadbeef" })
+    Hyprland.toplevels.testInsert(launched)
+
+    // `finished` only fires after the opener's settle pause past the last
+    // (only) window - see `settleMs` on SetupOpener.
+    tryCompare(Hyprland, "testDispatched", [
+      "hl.dsp.focus({ workspace = \"3\" })",
+      "hl.dsp.focus({ workspace = \"2\" })"
+    ])
+    compare(closeSpy.count, 0)
+  }
+
+  function test_deletingASetupAsksForConfirmationFirst() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+
+    mouseClick(findChild(chipFor(view, "Work"), "setupDeleteMouseArea"))
+
+    verify(findChild(view, "deleteConfirmDialog").opened)
+    verify(Object.keys(store.setups).indexOf("Work") !== -1)
+  }
+
+  function test_confirmingDeleteRemovesTheSetup() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+
+    mouseClick(findChild(chipFor(view, "Work"), "setupDeleteMouseArea"))
+    mouseClick(findChild(findChild(view, "deleteConfirmDialog"), "confirmButton"))
+
+    verify(!findChild(view, "deleteConfirmDialog").opened)
+    compare(Object.keys(store.setups).indexOf("Work"), -1)
+  }
+
+  function test_cancelingDeleteKeepsTheSetup() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+
+    mouseClick(findChild(chipFor(view, "Work"), "setupDeleteMouseArea"))
+    mouseClick(findChild(findChild(view, "deleteConfirmDialog"), "cancelButton"))
+
+    verify(!findChild(view, "deleteConfirmDialog").opened)
+    verify(Object.keys(store.setups).indexOf("Work") !== -1)
   }
 
   // With the settings card over it the overview stays on screen, previews

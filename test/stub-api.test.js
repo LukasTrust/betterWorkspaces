@@ -92,7 +92,8 @@ const quickshellTypes = [
   ["Quickshell/Hyprland/HyprlandMonitor.qml", "Quickshell.Hyprland._Ipc/HyprlandMonitor"],
   ["Quickshell/Wayland/Toplevel.qml", "Quickshell.Wayland._ToplevelManagement/Toplevel"],
   ["Quickshell/Wayland/ScreencopyView.qml", "Quickshell.Wayland._Screencopy/ScreencopyView"],
-  ["Quickshell/Io/IpcHandler.qml", "Quickshell.Io/IpcHandler"]
+  ["Quickshell/Io/IpcHandler.qml", "Quickshell.Io/IpcHandler"],
+  ["Quickshell/Io/Process.qml", "Quickshell.Io/Process"]
 ]
 
 // Only a missing Quickshell install is a reason to skip. With Quickshell
@@ -119,7 +120,8 @@ const qmlFileTypes = [
   [path.join(helpersDir, "FakeBar.qml"), path.join(omarchyShellDir, "Ui/PluginBarApi.qml")],
   [path.join(helpersDir, "FakeShell.qml"), path.join(omarchyShellDir, "services/PluginShellApi.qml")],
   [path.join(stubsDir, "qs/Ui/NumberField.qml"), path.join(omarchyShellDir, "Ui/NumberField.qml")],
-  [path.join(stubsDir, "qs/Ui/ToggleSwitch.qml"), path.join(omarchyShellDir, "Ui/ToggleSwitch.qml")]
+  [path.join(stubsDir, "qs/Ui/ToggleSwitch.qml"), path.join(omarchyShellDir, "Ui/ToggleSwitch.qml")],
+  [path.join(stubsDir, "qs/Ui/ConfirmDialog.qml"), path.join(omarchyShellDir, "Ui/ConfirmDialog.qml")]
 ]
 
 for (const [stubFile, realFile] of qmlFileTypes) {
@@ -127,5 +129,27 @@ for (const [stubFile, realFile] of qmlFileTypes) {
   test(`stub ${label} only uses members of ${realFile}`, { skip: fs.existsSync(realFile) ? false : `${realFile} not found` }, () => {
     const realMembers = qmlMembers(fs.readFileSync(realFile, "utf8"))
     assertSubset(stubFile, stubMembers(stubFile), realMembers, realFile)
+  })
+}
+
+// Stand-ins whose real counterpart is a thin QML wrapper (a handful of
+// friendly property names, e.g. FileView's `path`) around a .qmltypes-
+// registered type that carries the rest of the API (e.g. `atomicWrites`,
+// `setText`) without redeclaring it - so neither source alone lists
+// everything a real instance actually offers.
+const combinedTypes = [
+  [path.join(stubsDir, "Quickshell/Io/FileView.qml"), path.join(quickshellDir, "Io/FileView.qml"), "Quickshell.Io/FileViewInternal"]
+]
+
+for (const [stubFile, wrapperFile, exportName] of combinedTypes) {
+  const label = path.relative(__dirname, stubFile)
+  const skip = !fs.existsSync(wrapperFile) ? `${wrapperFile} not found`
+    : !quickshellInstalled ? "Quickshell not installed" : false
+  test(`stub ${label} only uses members of ${wrapperFile} or ${exportName}`, { skip }, () => {
+    const wrapperMembers = qmlMembers(fs.readFileSync(wrapperFile, "utf8"))
+    const baseMembers = exportedMembers(qmltypes, exportName)
+    assert.ok(baseMembers, `${exportName} not found in ${quickshellDir} - was it renamed?`)
+    const realMembers = new Set([...wrapperMembers, ...baseMembers])
+    assertSubset(stubFile, stubMembers(stubFile), realMembers, `${wrapperFile} or ${exportName}`)
   })
 }

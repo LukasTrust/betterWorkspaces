@@ -92,9 +92,11 @@ Item {
     return themed.length > 0 ? { kind: "image", source: themed } : null
   }
 
-  function iconFor(toplevel) {
-    var key = root.windowKey(toplevel)
-    if (key.length === 0)
+  // The lookup `iconFor` runs, but keyed directly by a window class rather
+  // than a live toplevel - what a saved setup's windows have instead, since
+  // they aren't open (or even running) to read a toplevel off of.
+  function iconForKey(key) {
+    if (!key || key.length === 0)
       return root.fallbackIcon
 
     var cacheKey = key.toLowerCase()
@@ -119,5 +121,9 @@ Item {
 
     root._cache[cacheKey] = resolved
     return resolved
+  }
+
+  function iconFor(toplevel) {
+    return root.iconForKey(root.windowKey(toplevel))
   }
 }

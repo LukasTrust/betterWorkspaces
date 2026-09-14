@@ -457,6 +457,21 @@ var SETTING_FIELDS = [
     fallback: true,
     label: "Workspace overview",
     description: "Clicking the workspace you are already on, or the key you bound, opens an overview of every workspace, window and saved setup. Off, a click only ever switches workspace."
+  },
+  {
+    key: "setupTargetMode",
+    type: "enum",
+    options: ["add", "replace"],
+    fallback: "add",
+    label: "Opening a setup on an occupied workspace",
+    description: "\"Add\" opens the setup's windows alongside what's already there. \"Replace\" closes the existing windows first - a normal close request, never a kill, so an app that wants to ask \"save changes?\" still gets to."
+  },
+  {
+    key: "focusAfterSetupDrop",
+    type: "boolean",
+    fallback: true,
+    label: "Focus after dropping a setup",
+    description: "Switch to the workspace a setup was dropped on and close the overview. Off, the focus stays where it was and the overview stays open."
   }
 ]
 
@@ -494,6 +509,10 @@ function clampSetting(name, value) {
   var field = settingField(name)
   if (!field) return value
   if (field.type === "boolean") return coerceBoolean(value, field.fallback)
+  if (field.type === "enum") {
+    var text = typeof value === "string" ? value.trim() : value
+    return field.options.indexOf(text) !== -1 ? text : field.fallback
+  }
 
   var raw = typeof value === "string" ? value.trim() : value
   var usable = typeof raw === "number" || (typeof raw === "string" && raw.length > 0)
@@ -575,6 +594,488 @@ function parseOverlayPayload(payloadJson) {
   return { view: view }
 }
 
+// ---- saved setups ----------------------------------------------------------
+//
+// A setup is a named snapshot of a workspace: how to start each window again
+// (its recipe), what it looked like, and where it sat, relative to the
+// workspace (0..1) so it survives a different monitor resolution. Everything
+// here is pure - reading the windows that are actually open, writing the
+// file, and talking to Hyprland to restore them all stay in QML.
+
+var SETUP_SCHEMA_VERSION = 1
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+// A name is free text - it's a JSON key and a label, never a filename, since
+// every setup lives in the one file - so anything is allowed except blank.
+// An existing name isn't rejected, only flagged: overwriting it is a
+// deliberate choice the caller confirms, not an error the form blocks.
+function setupNameStatus(name, existingNames) {
+  var trimmed = String(name || "").trim()
+  if (trimmed.length === 0) return "empty"
+  var list = existingNames || []
+  for (var i = 0; i < list.length; i++)
+    if (String(list[i]) === trimmed) return "duplicate"
+  return "ok"
+}
+
+// One window inside a setup: how to start it again (a desktop entry id, or
+// the argv a plain process was launched with), what it looked like
+// (`class`, floating, fullscreen), and its rectangle relative to the
+// workspace it was saved from.
+function validateSetupWindow(window) {
+  if (!isPlainObject(window)) return false
+  var recipe = window.recipe
+  if (!isPlainObject(recipe)) return false
+  if (recipe.type === "desktop-entry") {
+    if (typeof recipe.id !== "string" || recipe.id.length === 0) return false
+  } else if (recipe.type === "argv") {
+    if (!Array.isArray(recipe.argv) || recipe.argv.length === 0) return false
+    for (var i = 0; i < recipe.argv.length; i++)
+      if (typeof recipe.argv[i] !== "string" || recipe.argv[i].length === 0) return false
+  } else {
+    return false
+  }
+  if (typeof window.class !== "string") return false
+  if (typeof window.floating !== "boolean") return false
+  if (typeof window.fullscreen !== "boolean") return false
+  var rect = window.rect
+  if (!isPlainObject(rect)) return false
+  var fields = ["x", "y", "width", "height"]
+  for (var f = 0; f < fields.length; f++)
+    if (typeof rect[fields[f]] !== "number" || !isFinite(rect[fields[f]])) return false
+  return true
+}
+
+// One saved setup: an ordered, non-empty list of windows, plus which
+// workspace it should open on at boot (`null`/absent for "never"). Anything
+// that fails this is dropped rather than crashing the whole load - one
+// broken entry shouldn't cost every other saved setup.
+function validateSetupEntry(setup) {
+  if (!isPlainObject(setup)) return false
+  if (!Array.isArray(setup.windows) || setup.windows.length === 0) return false
+  for (var i = 0; i < setup.windows.length; i++)
+    if (!validateSetupWindow(setup.windows[i])) return false
+  if (setup.bootWorkspace !== null && setup.bootWorkspace !== undefined) {
+    if (typeof setup.bootWorkspace !== "number" || setup.bootWorkspace < 1 || setup.bootWorkspace > 10)
+      return false
+  }
+  return true
+}
+
+// The whole setups.json file, as read off disk. A missing or corrupt file,
+// an unreadable schemaVersion, or a top-level shape that isn't
+// `{ schemaVersion, setups: {} }` comes back as no setups at all rather than
+// throwing - the file is hand-editable and nothing here should be able to
+// crash the plugin over it. A malformed entry inside an otherwise-valid file
+// is dropped on its own, so the rest of the file still loads.
+function validateSetupFile(raw) {
+  var parsed
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : raw
+  } catch (error) {
+    return {}
+  }
+  if (!isPlainObject(parsed)) return {}
+  if (parsed.schemaVersion !== SETUP_SCHEMA_VERSION) return {}
+  if (!isPlainObject(parsed.setups)) return {}
+
+  var setups = {}
+  for (var name in parsed.setups)
+    if (validateSetupEntry(parsed.setups[name])) setups[name] = parsed.setups[name]
+  return setups
+}
+
+// Which windows a drop onto an already-occupied workspace has to close
+// before the setup opens. `add` never closes anything; `replace` closes
+// every window already there - a plain `close()` request each, never a
+// kill, so an app that wants to ask "save changes?" still gets to. An empty
+// workspace has nothing to close either way.
+function planSetupOpen(targetWindows, mode) {
+  var windows = targetWindows || []
+  if (mode !== "replace") return []
+  var addresses = []
+  for (var i = 0; i < windows.length; i++) {
+    var address = windows[i] && windows[i].address
+    if (address) addresses.push(String(address))
+  }
+  return addresses
+}
+
+// Assigns (or clears, for a falsy/out-of-range workspaceId) which workspace
+// a setup opens on at boot. At most one setup per workspace: handing this
+// one a workspace another setup already had takes it away from that one,
+// rather than leaving two setups racing for the same slot at boot - the
+// friendlier resolution over just refusing the change.
+function assignBootWorkspace(setups, name, workspaceId) {
+  var current = setups || {}
+  var target = Number(workspaceId) || 0
+  if (target < 1 || target > 10) target = 0
+
+  var next = {}
+  for (var key in current) {
+    var entry = current[key] || {}
+    var copy = {}
+    for (var field in entry) copy[field] = entry[field]
+    if (target > 0 && key !== name && copy.bootWorkspace === target)
+      copy.bootWorkspace = null
+    next[key] = copy
+  }
+  if (next[name]) next[name].bootWorkspace = target > 0 ? target : null
+  return next
+}
+
+// ---- capturing what is open right now --------------------------------------
+
+// A window's rectangle scaled into 0..1 relative to the workspace area it
+// was saved from, so the saved position survives a different monitor
+// resolution or a workspace that moves to another monitor later. Clamped to
+// the area for the same reason `cardWindowRect` is: a window Hyprland
+// reports hanging off the edge shouldn't produce an unusable (negative or
+// >1) rect. An area with no usable size (nothing measured yet) comes back
+// as "the whole workspace" rather than all zeros, which would collapse
+// every window's saved position to a single point.
+function relativeRect(rect, area) {
+  var r = rect || {}
+  var a = area || {}
+  var areaWidth = Number(a.width) || 0
+  var areaHeight = Number(a.height) || 0
+  if (areaWidth <= 0 || areaHeight <= 0) return { x: 0, y: 0, width: 1, height: 1 }
+
+  var x = ((Number(r.x) || 0) - (Number(a.x) || 0)) / areaWidth
+  var y = ((Number(r.y) || 0) - (Number(a.y) || 0)) / areaHeight
+  var width = (Number(r.width) || 0) / areaWidth
+  var height = (Number(r.height) || 0) / areaHeight
+
+  return {
+    x: Math.min(1, Math.max(0, x)),
+    y: Math.min(1, Math.max(0, y)),
+    width: Math.min(1, Math.max(0, width)),
+    height: Math.min(1, Math.max(0, height))
+  }
+}
+
+// Turns a workspace's current windows into a setup's `windows` array - the
+// one part of saving that isn't just a straight read of Hyprland's state.
+//
+// `items` is one entry per window, in the order to restore them, already
+// carrying whatever needed a live lookup: `desktopEntryId` (the best
+// matching installed app's desktop id, or "" for none) and `argv` (the
+// process's actual command line, read from /proc/<pid>/cmdline, or null if
+// that failed). A desktop entry beats a raw command line whenever both are
+// available - it survives the app itself changing how it's launched, where
+// a frozen argv wouldn't. A window with neither has no way to be started
+// again and is left out rather than saved half-broken.
+function captureSetupWindows(items) {
+  var list = items || []
+  var windows = []
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i] || {}
+    var recipe = null
+    if (item.desktopEntryId)
+      recipe = { type: "desktop-entry", id: String(item.desktopEntryId) }
+    else if (Array.isArray(item.argv) && item.argv.length > 0)
+      recipe = { type: "argv", argv: item.argv.map(String) }
+    if (!recipe) continue
+
+    windows.push({
+      recipe: recipe,
+      class: String(item.class || ""),
+      floating: !!item.floating,
+      fullscreen: !!item.fullscreen,
+      rect: relativeRect(item.rect, item.area)
+    })
+  }
+  return windows
+}
+
+// `/proc/<pid>/cmdline` is the process's real argv, NUL-separated with a
+// trailing NUL - read as text (not bytes: a QString round-trips an embedded
+// NUL as a plain character, unlike a C string, so nothing is lost splitting
+// on it). Empty input - the read failed, or the pid is already gone by the
+// time it's read - comes back as no argv at all rather than one empty one.
+function parseProcCmdline(raw) {
+  var text = String(raw || "")
+  if (text.length === 0) return []
+  var parts = text.split(String.fromCharCode(0))
+  if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop()
+  return parts
+}
+
+// ---- rebuilding the layout --------------------------------------------------
+//
+// Hyprland doesn't expose its dwindle tree and can't be told a window's
+// position directly (github.com/hyprwm/Hyprland/discussions/13035), so the
+// tree is worked back out of the rectangles a setup was saved with. Splitting
+// only ever divides one currently-unsplit window in two, so a valid tree is
+// one where, at every level, the rectangles fall cleanly on one side or the
+// other of a single straight line spanning the whole group - a "guillotine"
+// partition. A pinwheel of windows (each overlapping its neighbours across
+// both axes) has no such line at any level and can't be reproduced this way;
+// `inferSplitTree` says so plainly instead of guessing.
+
+var SPLIT_EPSILON = 0.01
+
+function boundsOf(group) {
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (var i = 0; i < group.length; i++) {
+    var w = group[i]
+    minX = Math.min(minX, w.x)
+    minY = Math.min(minY, w.y)
+    maxX = Math.max(maxX, w.x + w.width)
+    maxY = Math.max(maxY, w.y + w.height)
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+// Whether `group` covers `bounds` fully along one axis, edge to edge - the
+// check that stops a split from being accepted with a gap left over that
+// belongs to neither side.
+function spansFully(group, bounds, axis, size) {
+  var lo = Infinity, hi = -Infinity
+  for (var i = 0; i < group.length; i++) {
+    lo = Math.min(lo, group[i][axis])
+    hi = Math.max(hi, group[i][axis] + group[i][size])
+  }
+  return Math.abs(lo - bounds[axis]) <= SPLIT_EPSILON && Math.abs(hi - (bounds[axis] + bounds[size])) <= SPLIT_EPSILON
+}
+
+// One attempt at dividing `group` with a single line perpendicular to
+// `direction` ("vertical" = a left/right divide, "horizontal" = top/bottom).
+// Returns the two sides, or null if no such line cleanly separates every
+// rectangle in the group without straddling it.
+function trySplit(group, bounds, direction) {
+  var axis = direction === "vertical" ? "x" : "y"
+  var size = direction === "vertical" ? "width" : "height"
+  var crossAxis = direction === "vertical" ? "y" : "x"
+  var crossSize = direction === "vertical" ? "height" : "width"
+
+  var candidates = {}
+  for (var i = 0; i < group.length; i++) {
+    candidates[group[i][axis]] = true
+    candidates[group[i][axis] + group[i][size]] = true
+  }
+  var lines = []
+  for (var line in candidates) {
+    var value = Number(line)
+    if (value > bounds[axis] + SPLIT_EPSILON && value < bounds[axis] + bounds[size] - SPLIT_EPSILON)
+      lines.push(value)
+  }
+  lines.sort(function(a, b) { return a - b })
+
+  for (var l = 0; l < lines.length; l++) {
+    var first = [], second = [], straddles = false
+    for (var g = 0; g < group.length; g++) {
+      var w = group[g]
+      var lo = w[axis], hi = w[axis] + w[size]
+      if (hi <= lines[l] + SPLIT_EPSILON) first.push(w)
+      else if (lo >= lines[l] - SPLIT_EPSILON) second.push(w)
+      else { straddles = true; break }
+    }
+    if (straddles || first.length === 0 || second.length === 0) continue
+    if (!spansFully(first, bounds, crossAxis, crossSize)) continue
+    if (!spansFully(second, bounds, crossAxis, crossSize)) continue
+    return { first: first, second: second }
+  }
+  return null
+}
+
+// A group of one or more windows (each `{ index, x, y, width, height }`, the
+// index being its position in the saved setup) as a tree of
+// `{ type: "leaf", index }` and `{ type: "split", direction, first, second }`
+// nodes - "vertical" puts `first` on the left and `second` on the right,
+// "horizontal" puts `first` on top and `second` below. A group that can't be
+// split on either axis becomes `{ type: "flat", indices }`: every window in
+// save order, with no claim about how they were actually arranged.
+function decomposeGroup(group) {
+  if (group.length === 1) return { type: "leaf", index: group[0].index }
+
+  var bounds = boundsOf(group)
+  var vertical = trySplit(group, bounds, "vertical")
+  if (vertical) {
+    return {
+      type: "split",
+      direction: "vertical",
+      first: decomposeGroup(vertical.first),
+      second: decomposeGroup(vertical.second)
+    }
+  }
+  var horizontal = trySplit(group, bounds, "horizontal")
+  if (horizontal) {
+    return {
+      type: "split",
+      direction: "horizontal",
+      first: decomposeGroup(horizontal.first),
+      second: decomposeGroup(horizontal.second)
+    }
+  }
+
+  var indices = []
+  for (var i = 0; i < group.length; i++) indices.push(group[i].index)
+  return { type: "flat", indices: indices }
+}
+
+// `windows` is a setup's windows in save order, each with a `rect`
+// (`{ x, y, width, height }`, relative to the workspace) and `floating`.
+// Floating windows take no part in the split tree - they get placed at their
+// exact saved rectangle once the tiled ones are open - so they come back
+// separately as `floatingIndices`. `tiled` is null when every window floats.
+function inferSplitTree(windows) {
+  var list = windows || []
+  var tiled = []
+  var floatingIndices = []
+  for (var i = 0; i < list.length; i++) {
+    var w = list[i] || {}
+    if (w.floating) {
+      floatingIndices.push(i)
+      continue
+    }
+    var rect = w.rect || {}
+    tiled.push({
+      index: i,
+      x: Number(rect.x) || 0,
+      y: Number(rect.y) || 0,
+      width: Number(rect.width) || 0,
+      height: Number(rect.height) || 0
+    })
+  }
+
+  return {
+    tiled: tiled.length > 0 ? decomposeGroup(tiled) : null,
+    floatingIndices: floatingIndices
+  }
+}
+
+// The leaf that must exist, as a single unsplit window, before any of a
+// node's own splits can happen - the one every split in the tree eventually
+// traces back to `first`, down to a leaf.
+function seedIndex(node) {
+  if (node.type === "leaf") return node.index
+  if (node.type === "flat") return node.indices[0]
+  return seedIndex(node.first)
+}
+
+// A tree's construction order flattened into the moves that actually build
+// it: focus an already-open window, preselect a direction, open the next
+// one. Splitting only ever divides a single, not-yet-split window, so a
+// node's own split must run *before* either side is subdivided further -
+// `first` cannot be sliced up as if it already had its final, smaller share
+// of the space, because until the split happens it still has the whole
+// thing.
+//
+// Returns the moves after the very first window - the one that starts with
+// nothing open yet and so takes no focus or preselect - which the caller
+// prepends itself via `seedIndex`.
+function splitSteps(node) {
+  if (node.type === "leaf") return []
+  if (node.type === "flat") {
+    var steps = []
+    for (var i = 1; i < node.indices.length; i++)
+      steps.push({ focusIndex: node.indices[i - 1], preselect: "right", index: node.indices[i] })
+    return steps
+  }
+
+  var firstSeed = seedIndex(node.first)
+  var secondSeed = seedIndex(node.second)
+  var cut = {
+    focusIndex: firstSeed,
+    preselect: node.direction === "vertical" ? "right" : "down",
+    index: secondSeed
+  }
+  return [cut].concat(splitSteps(node.first), splitSteps(node.second))
+}
+
+// The full open order for a tiled split tree: `{ index, preselect,
+// focusIndex }` per window, in the order to run them in. The very first
+// entry has `preselect`/`focusIndex` both null - there is nothing yet to
+// focus or split. `null` in (no tiled windows at all) comes back as `[]`.
+function splitTreeSteps(tree) {
+  if (!tree) return []
+  var steps = [{ index: seedIndex(tree), preselect: null, focusIndex: null }]
+  var rest = splitSteps(tree)
+  for (var i = 0; i < rest.length; i++)
+    steps.push({ index: rest[i].index, preselect: rest[i].preselect, focusIndex: rest[i].focusIndex })
+  return steps
+}
+
+// ---- opening a saved setup --------------------------------------------------
+
+// The inverse of `relativeRect`: a saved 0..1 rectangle scaled back into
+// real pixels for wherever it's being opened - not necessarily the same
+// size as the workspace it was saved from, which is exactly why the saved
+// rect is relative in the first place.
+function absoluteRect(rect, area) {
+  var r = rect || {}
+  var a = area || {}
+  var areaWidth = Number(a.width) || 0
+  var areaHeight = Number(a.height) || 0
+  return {
+    x: (Number(a.x) || 0) + (Number(r.x) || 0) * areaWidth,
+    y: (Number(a.y) || 0) + (Number(r.y) || 0) * areaHeight,
+    width: (Number(r.width) || 0) * areaWidth,
+    height: (Number(r.height) || 0) * areaHeight
+  }
+}
+
+// Turns a saved setup into the ordered list of operations that open it. The
+// caller (QML - only it can talk to Hyprland and launch a process) walks
+// this list one at a time: launch the window's recipe, wait for it to
+// appear, then act on what the entry says, before moving to the next.
+//
+// A tiled entry carries `focusIndex`/`preselect` straight from
+// `splitTreeSteps`: focus the already-open window at that *setup* index (by
+// whatever address it ended up with - this only ever deals in indices, the
+// address is something only the caller, watching windows actually open,
+// can know) and preselect that direction before launching. `preselect: null`
+// means just open it - either the very first window, or a step from an
+// indecomposable ("flat") group with no direction worth preselecting.
+//
+// A floating entry carries the exact rect to place the window at once it's
+// open, already scaled into `targetArea` - which need not be the area it
+// was saved from.
+//
+// Tiled windows come first, in build order, so every floating window is
+// free to be positioned last without disturbing the tiled layout underneath
+// it.
+function planOpenSetup(setup, targetArea) {
+  var windows = (setup && setup.windows) || []
+  var captured = []
+  for (var i = 0; i < windows.length; i++) {
+    var w = windows[i] || {}
+    captured.push({ index: i, floating: !!w.floating, rect: w.rect })
+  }
+
+  var tree = inferSplitTree(captured)
+  var steps = splitTreeSteps(tree.tiled)
+
+  var operations = []
+  for (var s = 0; s < steps.length; s++) {
+    var step = steps[s]
+    operations.push({
+      index: step.index,
+      recipe: windows[step.index].recipe,
+      floating: false,
+      preselect: step.preselect,
+      focusIndex: step.focusIndex,
+      rect: null
+    })
+  }
+  for (var f = 0; f < tree.floatingIndices.length; f++) {
+    var index = tree.floatingIndices[f]
+    operations.push({
+      index: index,
+      recipe: windows[index].recipe,
+      floating: true,
+      preselect: null,
+      focusIndex: null,
+      rect: absoluteRect(windows[index].rect, targetArea)
+    })
+  }
+  return operations
+}
+
 // Node's CommonJS module loader defines `module`; QML's JS engine never
 // does, so this is a no-op when the file is imported as a QML library.
 if (typeof module !== "undefined" && module.exports) {
@@ -601,6 +1102,20 @@ if (typeof module !== "undefined" && module.exports) {
     widgetSettingsFrom: widgetSettingsFrom,
     parseOverlayPayload: parseOverlayPayload,
     overlayState: overlayState,
-    overlayEscape: overlayEscape
+    overlayEscape: overlayEscape,
+    SETUP_SCHEMA_VERSION: SETUP_SCHEMA_VERSION,
+    setupNameStatus: setupNameStatus,
+    validateSetupWindow: validateSetupWindow,
+    validateSetupEntry: validateSetupEntry,
+    validateSetupFile: validateSetupFile,
+    planSetupOpen: planSetupOpen,
+    assignBootWorkspace: assignBootWorkspace,
+    relativeRect: relativeRect,
+    captureSetupWindows: captureSetupWindows,
+    parseProcCmdline: parseProcCmdline,
+    inferSplitTree: inferSplitTree,
+    splitTreeSteps: splitTreeSteps,
+    absoluteRect: absoluteRect,
+    planOpenSetup: planOpenSetup
   }
 }

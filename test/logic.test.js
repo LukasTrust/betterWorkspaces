@@ -24,7 +24,21 @@ const {
   widgetSettingsFrom,
   parseOverlayPayload,
   overlayState,
-  overlayEscape
+  overlayEscape,
+  SETUP_SCHEMA_VERSION,
+  setupNameStatus,
+  validateSetupWindow,
+  validateSetupEntry,
+  validateSetupFile,
+  planSetupOpen,
+  relativeRect,
+  captureSetupWindows,
+  parseProcCmdline,
+  inferSplitTree,
+  splitTreeSteps,
+  absoluteRect,
+  planOpenSetup,
+  assignBootWorkspace
 } = require("../logic.js")
 
 // The shape Workspaces.qml hands computeWorkspaceIds: what Hyprland knows
@@ -236,6 +250,18 @@ test("clampSetting leaves settings it has no field for alone", () => {
   assert.equal(clampSetting("icons", "anything"), "anything")
 })
 
+test("clampSetting keeps a usable enum value", () => {
+  assert.equal(clampSetting("setupTargetMode", "replace"), "replace")
+  assert.equal(clampSetting("setupTargetMode", "add"), "add")
+  assert.equal(clampSetting("setupTargetMode", "  replace  "), "replace")
+})
+
+test("clampSetting falls back to the default for an enum value that isn't one of its options", () => {
+  for (const value of [undefined, null, "", "REPLACE", "overwrite", 1, {}, []]) {
+    assert.equal(clampSetting("setupTargetMode", value), SETTING_DEFAULTS.setupTargetMode)
+  }
+})
+
 test("settingField finds a setting by key, and nothing for an unknown one", () => {
   assert.equal(settingField("iconSize").max, 32)
   assert.equal(settingField("icons"), null)
@@ -270,10 +296,13 @@ test("every setting carries the bounds and wording the form needs", () => {
   for (const field of SETTING_FIELDS) {
     assert.ok(field.label, `${field.key}: no label`)
     assert.ok(field.description, `${field.key}: no description`)
-    assert.ok(["integer", "boolean"].includes(field.type), `${field.key}: unknown type ${field.type}`)
+    assert.ok(["integer", "boolean", "enum"].includes(field.type), `${field.key}: unknown type ${field.type}`)
     if (field.type === "integer") {
       assert.ok(field.min < field.max, `${field.key}: empty range`)
       assert.ok(field.fallback >= field.min && field.fallback <= field.max, `${field.key}: default out of range`)
+    } else if (field.type === "enum") {
+      assert.ok(field.options && field.options.length >= 2, `${field.key}: needs at least two options`)
+      assert.ok(field.options.includes(field.fallback), `${field.key}: default is not one of its own options`)
     } else {
       assert.equal(typeof field.fallback, "boolean", `${field.key}: default is not a boolean`)
     }
@@ -629,4 +658,519 @@ test("planReorder plans nothing for a drag that changes no order", () => {
   assert.deepEqual(planReorder([{ id: 1, addresses: ["a", ""] }, { id: 2 }], 1, 0), [
     { address: "a", workspace: 2 }
   ])
+})
+
+// ---- saved setups -----------------------------------------------------------
+
+function aWindow(overrides) {
+  return Object.assign({
+    recipe: { type: "desktop-entry", id: "firefox.desktop" },
+    class: "firefox",
+    floating: false,
+    fullscreen: false,
+    rect: { x: 0, y: 0, width: 1, height: 1 }
+  }, overrides)
+}
+
+function aSetup(windows, overrides) {
+  return Object.assign({ windows: windows || [aWindow()] }, overrides)
+}
+
+function aSetupFile(setups) {
+  return JSON.stringify({ schemaVersion: SETUP_SCHEMA_VERSION, setups: setups })
+}
+
+test("setupNameStatus rejects a blank or whitespace-only name", () => {
+  assert.equal(setupNameStatus("", []), "empty")
+  assert.equal(setupNameStatus("   ", []), "empty")
+  assert.equal(setupNameStatus(null, []), "empty")
+})
+
+test("setupNameStatus flags an existing name instead of rejecting it", () => {
+  assert.equal(setupNameStatus("Work", ["Work", "Games"]), "duplicate")
+  assert.equal(setupNameStatus("games", ["Work", "Games"]), "ok")
+})
+
+test("setupNameStatus accepts special characters and unicode - it is a label, not a filename", () => {
+  assert.equal(setupNameStatus("🎮 Gaming / Night-Shift!", []), "ok")
+  assert.equal(setupNameStatus("日本語", []), "ok")
+})
+
+test("validateSetupWindow accepts a desktop-entry or argv recipe", () => {
+  assert.equal(validateSetupWindow(aWindow()), true)
+  assert.equal(validateSetupWindow(aWindow({ recipe: { type: "argv", argv: ["code", "--new-window"] } })), true)
+})
+
+test("validateSetupWindow rejects a broken recipe", () => {
+  assert.equal(validateSetupWindow(aWindow({ recipe: { type: "desktop-entry", id: "" } })), false)
+  assert.equal(validateSetupWindow(aWindow({ recipe: { type: "argv", argv: [] } })), false)
+  assert.equal(validateSetupWindow(aWindow({ recipe: { type: "argv", argv: ["code", 7] } })), false, "non-string argv")
+  assert.equal(validateSetupWindow(aWindow({ recipe: { type: "unknown" } })), false)
+  assert.equal(validateSetupWindow(aWindow({ recipe: null })), false)
+})
+
+test("validateSetupWindow rejects wrong-typed fields and an unusable rect", () => {
+  assert.equal(validateSetupWindow(aWindow({ floating: "false" })), false)
+  assert.equal(validateSetupWindow(aWindow({ class: 3 })), false)
+  assert.equal(validateSetupWindow(aWindow({ rect: { x: 0, y: 0, width: "1", height: 1 } })), false)
+  assert.equal(validateSetupWindow(null), false)
+})
+
+test("validateSetupEntry needs at least one valid window", () => {
+  assert.equal(validateSetupEntry(aSetup([aWindow()])), true)
+  assert.equal(validateSetupEntry(aSetup([])), false)
+  assert.equal(validateSetupEntry(aSetup([aWindow(), aWindow({ class: 3 })])), false)
+  assert.equal(validateSetupEntry(null), false)
+})
+
+test("validateSetupEntry accepts a boot workspace 1-10 or none, rejects anything else", () => {
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 3 })), true)
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: null })), true)
+  assert.equal(validateSetupEntry(aSetup([aWindow()])), true, "absent is fine too")
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 0 })), false)
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 11 })), false)
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: "3" })), false)
+})
+
+test("validateSetupFile reads back exactly the valid setups", () => {
+  const file = aSetupFile({ Work: aSetup([aWindow()]), Games: aSetup([aWindow({ class: "steam" })]) })
+  assert.deepEqual(Object.keys(validateSetupFile(file)).sort(), ["Games", "Work"])
+})
+
+test("validateSetupFile drops one broken entry without losing the rest", () => {
+  const file = aSetupFile({ Work: aSetup([aWindow()]), Broken: aSetup([]) })
+  const result = validateSetupFile(file)
+  assert.deepEqual(Object.keys(result), ["Work"])
+})
+
+test("validateSetupFile rejects a corrupt file rather than throwing", () => {
+  assert.deepEqual(validateSetupFile("{not json"), {})
+  assert.deepEqual(validateSetupFile("[]"), {})
+  assert.deepEqual(validateSetupFile("null"), {})
+  assert.deepEqual(validateSetupFile(""), {})
+  assert.deepEqual(validateSetupFile(undefined), {})
+})
+
+test("validateSetupFile rejects an unknown schemaVersion", () => {
+  const file = JSON.stringify({ schemaVersion: SETUP_SCHEMA_VERSION + 1, setups: { Work: aSetup([aWindow()]) } })
+  assert.deepEqual(validateSetupFile(file), {})
+  assert.deepEqual(validateSetupFile(JSON.stringify({ setups: {} })), {})
+})
+
+test("planSetupOpen closes nothing to add, and exactly what is there to replace", () => {
+  const windows = [{ address: "a" }, { address: "b" }]
+  assert.deepEqual(planSetupOpen(windows, "add"), [])
+  assert.deepEqual(planSetupOpen(windows, "replace"), ["a", "b"])
+})
+
+test("planSetupOpen behaves the same in both modes on an empty workspace", () => {
+  assert.deepEqual(planSetupOpen([], "add"), [])
+  assert.deepEqual(planSetupOpen([], "replace"), [])
+  assert.deepEqual(planSetupOpen(null, "replace"), [])
+})
+
+test("assignBootWorkspace sets a setup's boot workspace", () => {
+  const setups = { Work: { windows: [], bootWorkspace: null }, Games: { windows: [] } }
+  const next = assignBootWorkspace(setups, "Work", 3)
+  assert.equal(next.Work.bootWorkspace, 3)
+  assert.equal(next.Games.bootWorkspace, undefined)
+})
+
+test("assignBootWorkspace clears whoever else already had that workspace", () => {
+  const setups = { Work: { windows: [], bootWorkspace: 3 }, Games: { windows: [], bootWorkspace: null } }
+  const next = assignBootWorkspace(setups, "Games", 3)
+  assert.equal(next.Games.bootWorkspace, 3)
+  assert.equal(next.Work.bootWorkspace, null)
+})
+
+test("assignBootWorkspace clears with 0 or an out-of-range workspace", () => {
+  const setups = { Work: { windows: [], bootWorkspace: 3 } }
+  assert.equal(assignBootWorkspace(setups, "Work", 0).Work.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(setups, "Work", 11).Work.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(setups, "Work", null).Work.bootWorkspace, null)
+})
+
+test("assignBootWorkspace leaves every other field of the changed entries alone", () => {
+  const setups = { Work: { windows: [{ recipe: { type: "argv", argv: ["x"] } }], bootWorkspace: null } }
+  const next = assignBootWorkspace(setups, "Work", 5)
+  assert.deepEqual(next.Work.windows, setups.Work.windows)
+})
+
+test("assignBootWorkspace copes with an unknown setup name and an empty store", () => {
+  assert.deepEqual(assignBootWorkspace({}, "Ghost", 3), {})
+  assert.deepEqual(assignBootWorkspace(null, "Ghost", 3), {})
+})
+
+// ---- capturing what is open right now ---------------------------------------
+
+test("relativeRect scales a window's rect into 0..1 of its workspace area", () => {
+  assert.deepEqual(relativeRect({ x: 0, y: 0, width: 960, height: 1080 }, { x: 0, y: 0, width: 1920, height: 1080 }), {
+    x: 0,
+    y: 0,
+    width: 0.5,
+    height: 1
+  })
+  assert.deepEqual(relativeRect({ x: 960, y: 540, width: 960, height: 540 }, { x: 0, y: 0, width: 1920, height: 1080 }), {
+    x: 0.5,
+    y: 0.5,
+    width: 0.5,
+    height: 0.5
+  })
+})
+
+test("relativeRect measures against the workspace's own monitor origin", () => {
+  assert.deepEqual(relativeRect({ x: 2020, y: 100, width: 960, height: 1080 }, { x: 1920, y: 0, width: 1920, height: 1080 }), {
+    x: 100 / 1920,
+    y: 100 / 1080,
+    width: 0.5,
+    height: 1
+  })
+})
+
+test("relativeRect clamps a window that hangs off its workspace", () => {
+  assert.deepEqual(relativeRect({ x: -200, y: 0, width: 960, height: 2000 }, { x: 0, y: 0, width: 1920, height: 1080 }), {
+    x: 0,
+    y: 0,
+    width: 0.5,
+    height: 1
+  })
+})
+
+test("relativeRect falls back to the whole workspace rather than dividing by zero", () => {
+  assert.deepEqual(relativeRect({ x: 0, y: 0, width: 100, height: 100 }, { width: 0, height: 0 }), {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1
+  })
+  assert.deepEqual(relativeRect({}, null), { x: 0, y: 0, width: 1, height: 1 })
+})
+
+function anItem(overrides) {
+  return Object.assign({
+    desktopEntryId: "firefox.desktop",
+    argv: null,
+    class: "firefox",
+    floating: false,
+    fullscreen: false,
+    rect: { x: 0, y: 0, width: 1920, height: 1080 },
+    area: { x: 0, y: 0, width: 1920, height: 1080 }
+  }, overrides)
+}
+
+test("captureSetupWindows prefers a desktop entry over a raw argv", () => {
+  const windows = captureSetupWindows([anItem({ argv: ["firefox", "--new-window"] })])
+  assert.deepEqual(windows[0].recipe, { type: "desktop-entry", id: "firefox.desktop" })
+})
+
+test("captureSetupWindows falls back to argv when there is no desktop entry match", () => {
+  const windows = captureSetupWindows([anItem({ desktopEntryId: "", argv: ["some-tool", "--flag"] })])
+  assert.deepEqual(windows[0].recipe, { type: "argv", argv: ["some-tool", "--flag"] })
+})
+
+test("captureSetupWindows leaves out a window with neither a desktop entry nor an argv", () => {
+  const windows = captureSetupWindows([anItem({ desktopEntryId: "", argv: null }), anItem()])
+  assert.equal(windows.length, 1)
+  assert.equal(windows[0].class, "firefox")
+})
+
+test("captureSetupWindows carries class, floating, fullscreen and the relative rect", () => {
+  const windows = captureSetupWindows([
+    anItem({
+      class: "code",
+      floating: true,
+      fullscreen: true,
+      rect: { x: 960, y: 0, width: 960, height: 1080 },
+      area: { x: 0, y: 0, width: 1920, height: 1080 }
+    })
+  ])
+  assert.deepEqual(windows[0], {
+    recipe: { type: "desktop-entry", id: "firefox.desktop" },
+    class: "code",
+    floating: true,
+    fullscreen: true,
+    rect: { x: 0.5, y: 0, width: 0.5, height: 1 }
+  })
+})
+
+test("captureSetupWindows copes with nothing to capture", () => {
+  assert.deepEqual(captureSetupWindows([]), [])
+  assert.deepEqual(captureSetupWindows(null), [])
+})
+
+test("parseProcCmdline splits on the NUL separator and drops the trailing one", () => {
+  const NUL = String.fromCharCode(0)
+  assert.deepEqual(parseProcCmdline(["code", "--new-window", "/tmp"].join(NUL) + NUL), ["code", "--new-window", "/tmp"])
+  assert.deepEqual(parseProcCmdline("firefox" + NUL), ["firefox"])
+})
+
+test("parseProcCmdline copes with a read that found nothing", () => {
+  assert.deepEqual(parseProcCmdline(""), [])
+  assert.deepEqual(parseProcCmdline(null), [])
+  assert.deepEqual(parseProcCmdline(undefined), [])
+})
+
+// ---- rebuilding the layout --------------------------------------------------
+
+function rect(x, y, width, height, floating) {
+  return { rect: { x, y, width, height }, floating: !!floating }
+}
+
+test("inferSplitTree keeps a single window as one leaf", () => {
+  const tree = inferSplitTree([rect(0, 0, 1, 1)])
+  assert.deepEqual(tree, { tiled: { type: "leaf", index: 0 }, floatingIndices: [] })
+})
+
+test("inferSplitTree finds two windows side by side", () => {
+  const tree = inferSplitTree([rect(0, 0, 0.5, 1), rect(0.5, 0, 0.5, 1)])
+  assert.deepEqual(tree.tiled, {
+    type: "split",
+    direction: "vertical",
+    first: { type: "leaf", index: 0 },
+    second: { type: "leaf", index: 1 }
+  })
+})
+
+test("inferSplitTree finds two windows stacked", () => {
+  const tree = inferSplitTree([rect(0, 0, 1, 0.5), rect(0, 0.5, 1, 0.5)])
+  assert.deepEqual(tree.tiled, {
+    type: "split",
+    direction: "horizontal",
+    first: { type: "leaf", index: 0 },
+    second: { type: "leaf", index: 1 }
+  })
+})
+
+test("inferSplitTree finds one window beside two stacked ones", () => {
+  const tree = inferSplitTree([
+    rect(0, 0, 0.5, 1),
+    rect(0.5, 0, 0.5, 0.5),
+    rect(0.5, 0.5, 0.5, 0.5)
+  ])
+  assert.deepEqual(tree.tiled, {
+    type: "split",
+    direction: "vertical",
+    first: { type: "leaf", index: 0 },
+    second: {
+      type: "split",
+      direction: "horizontal",
+      first: { type: "leaf", index: 1 },
+      second: { type: "leaf", index: 2 }
+    }
+  })
+})
+
+test("inferSplitTree finds a 2x2 grid", () => {
+  const tree = inferSplitTree([
+    rect(0, 0, 0.5, 0.5),
+    rect(0.5, 0, 0.5, 0.5),
+    rect(0, 0.5, 0.5, 0.5),
+    rect(0.5, 0.5, 0.5, 0.5)
+  ])
+  assert.deepEqual(tree.tiled, {
+    type: "split",
+    direction: "vertical",
+    first: {
+      type: "split",
+      direction: "horizontal",
+      first: { type: "leaf", index: 0 },
+      second: { type: "leaf", index: 2 }
+    },
+    second: {
+      type: "split",
+      direction: "horizontal",
+      first: { type: "leaf", index: 1 },
+      second: { type: "leaf", index: 3 }
+    }
+  })
+})
+
+test("inferSplitTree finds a nested, unevenly-sized arrangement", () => {
+  // A big window on the left (60%), and the right 40% split top/bottom
+  // unevenly again.
+  const tree = inferSplitTree([
+    rect(0, 0, 0.6, 1),
+    rect(0.6, 0, 0.4, 0.3),
+    rect(0.6, 0.3, 0.4, 0.7)
+  ])
+  assert.deepEqual(tree.tiled, {
+    type: "split",
+    direction: "vertical",
+    first: { type: "leaf", index: 0 },
+    second: {
+      type: "split",
+      direction: "horizontal",
+      first: { type: "leaf", index: 1 },
+      second: { type: "leaf", index: 2 }
+    }
+  })
+})
+
+test("inferSplitTree keeps floating windows out of the tree entirely", () => {
+  const tree = inferSplitTree([
+    rect(0, 0, 0.5, 1),
+    rect(0.2, 0.2, 0.3, 0.3, true),
+    rect(0.5, 0, 0.5, 1)
+  ])
+  assert.deepEqual(tree.floatingIndices, [1])
+  assert.deepEqual(tree.tiled, {
+    type: "split",
+    direction: "vertical",
+    first: { type: "leaf", index: 0 },
+    second: { type: "leaf", index: 2 }
+  })
+})
+
+test("inferSplitTree is null when every window floats", () => {
+  const tree = inferSplitTree([rect(0, 0, 0.5, 0.5, true), rect(0.5, 0.5, 0.5, 0.5, true)])
+  assert.equal(tree.tiled, null)
+  assert.deepEqual(tree.floatingIndices, [0, 1])
+})
+
+test("inferSplitTree falls back cleanly for a pinwheel no straight line can cut", () => {
+  // Four windows in a pinwheel: every vertical or horizontal line inside the
+  // group has at least one rectangle straddling it, so neither axis finds a
+  // clean split at any level - a "general" partition a guillotine cut can't
+  // reproduce.
+  const tree = inferSplitTree([
+    rect(0, 0, 0.6, 0.4),
+    rect(0.6, 0, 0.4, 0.6),
+    rect(0.4, 0.6, 0.6, 0.4),
+    rect(0, 0.4, 0.4, 0.6)
+  ])
+  assert.deepEqual(tree.tiled, { type: "flat", indices: [0, 1, 2, 3] })
+})
+
+test("splitTreeSteps opens a single leaf with no preselect at all", () => {
+  const tree = inferSplitTree([rect(0, 0, 1, 1)]).tiled
+  assert.deepEqual(splitTreeSteps(tree), [{ index: 0, preselect: null, focusIndex: null }])
+})
+
+test("splitTreeSteps focuses the first window and preselects the second, side by side", () => {
+  const tree = inferSplitTree([rect(0, 0, 0.5, 1), rect(0.5, 0, 0.5, 1)]).tiled
+  assert.deepEqual(splitTreeSteps(tree), [
+    { index: 0, preselect: null, focusIndex: null },
+    { index: 1, preselect: "right", focusIndex: 0 }
+  ])
+})
+
+test("splitTreeSteps stacks the second window below the first", () => {
+  const tree = inferSplitTree([rect(0, 0, 1, 0.5), rect(0, 0.5, 1, 0.5)]).tiled
+  assert.deepEqual(splitTreeSteps(tree), [
+    { index: 0, preselect: null, focusIndex: null },
+    { index: 1, preselect: "down", focusIndex: 0 }
+  ])
+})
+
+test("splitTreeSteps splits the outer pair before subdividing either side", () => {
+  const tree = inferSplitTree([
+    rect(0, 0, 0.5, 1),
+    rect(0.5, 0, 0.5, 0.5),
+    rect(0.5, 0.5, 0.5, 0.5)
+  ]).tiled
+  assert.deepEqual(splitTreeSteps(tree), [
+    { index: 0, preselect: null, focusIndex: null },
+    // The outer left/right cut, made while window 0 still fills the screen.
+    { index: 1, preselect: "right", focusIndex: 0 },
+    // Only now does the right side get divided top/bottom.
+    { index: 2, preselect: "down", focusIndex: 1 }
+  ])
+})
+
+test("splitTreeSteps chains a flat fallback with an arbitrary but usable order", () => {
+  const tree = { type: "flat", indices: [2, 0, 1] }
+  assert.deepEqual(splitTreeSteps(tree), [
+    { index: 2, preselect: null, focusIndex: null },
+    { index: 0, preselect: "right", focusIndex: 2 },
+    { index: 1, preselect: "right", focusIndex: 0 }
+  ])
+})
+
+test("splitTreeSteps is empty with no tiled tree at all", () => {
+  assert.deepEqual(splitTreeSteps(null), [])
+})
+
+// ---- opening a saved setup --------------------------------------------------
+
+test("absoluteRect scales a saved 0..1 rect back into real pixels", () => {
+  assert.deepEqual(absoluteRect({ x: 0.5, y: 0, width: 0.5, height: 1 }, { x: 0, y: 0, width: 1920, height: 1080 }), {
+    x: 960,
+    y: 0,
+    width: 960,
+    height: 1080
+  })
+})
+
+test("absoluteRect places it relative to the target area's own origin", () => {
+  assert.deepEqual(absoluteRect({ x: 0, y: 0, width: 0.25, height: 0.25 }, { x: 1920, y: 0, width: 1920, height: 1080 }), {
+    x: 1920,
+    y: 0,
+    width: 480,
+    height: 270
+  })
+})
+
+test("absoluteRect copes with nothing usable", () => {
+  assert.deepEqual(absoluteRect(null, null), { x: 0, y: 0, width: 0, height: 0 })
+})
+
+function aRecipe(id) {
+  return { type: "desktop-entry", id: id }
+}
+
+function tiledWindow(recipeId, x, y, width, height) {
+  return { recipe: aRecipe(recipeId), floating: false, rect: { x, y, width, height } }
+}
+
+function floatingWindow(recipeId, x, y, width, height) {
+  return { recipe: aRecipe(recipeId), floating: true, rect: { x, y, width, height } }
+}
+
+test("planOpenSetup opens a single tiled window with no preselect", () => {
+  const setup = { windows: [tiledWindow("a", 0, 0, 1, 1)] }
+  assert.deepEqual(planOpenSetup(setup, { width: 1920, height: 1080 }), [
+    { index: 0, recipe: aRecipe("a"), floating: false, preselect: null, focusIndex: null, rect: null }
+  ])
+})
+
+test("planOpenSetup carries the split direction and focus target for a second tiled window", () => {
+  const setup = { windows: [tiledWindow("a", 0, 0, 0.5, 1), tiledWindow("b", 0.5, 0, 0.5, 1)] }
+  assert.deepEqual(planOpenSetup(setup, { width: 1920, height: 1080 }), [
+    { index: 0, recipe: aRecipe("a"), floating: false, preselect: null, focusIndex: null, rect: null },
+    { index: 1, recipe: aRecipe("b"), floating: false, preselect: "right", focusIndex: 0, rect: null }
+  ])
+})
+
+test("planOpenSetup puts every floating window after the tiled ones, positioned on the target area", () => {
+  const setup = {
+    windows: [
+      tiledWindow("a", 0, 0, 1, 1),
+      floatingWindow("b", 0.25, 0.25, 0.5, 0.5)
+    ]
+  }
+  const plan = planOpenSetup(setup, { x: 0, y: 0, width: 1000, height: 1000 })
+  assert.equal(plan.length, 2)
+  assert.equal(plan[0].index, 0)
+  assert.equal(plan[0].floating, false)
+  assert.deepEqual(plan[1], {
+    index: 1,
+    recipe: aRecipe("b"),
+    floating: true,
+    preselect: null,
+    focusIndex: null,
+    rect: { x: 250, y: 250, width: 500, height: 500 }
+  })
+})
+
+test("planOpenSetup handles a workspace that is only floating windows", () => {
+  const setup = { windows: [floatingWindow("a", 0, 0, 0.5, 0.5)] }
+  const plan = planOpenSetup(setup, { x: 0, y: 0, width: 1000, height: 1000 })
+  assert.deepEqual(plan, [
+    { index: 0, recipe: aRecipe("a"), floating: true, preselect: null, focusIndex: null, rect: { x: 0, y: 0, width: 500, height: 500 } }
+  ])
+})
+
+test("planOpenSetup copes with an empty setup", () => {
+  assert.deepEqual(planOpenSetup({ windows: [] }, { width: 1920, height: 1080 }), [])
+  assert.deepEqual(planOpenSetup(null, { width: 1920, height: 1080 }), [])
 })
