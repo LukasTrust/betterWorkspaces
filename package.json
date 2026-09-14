@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test": "node --test --experimental-test-coverage --test-coverage-include=logic.js --test-coverage-lines=95 --test-coverage-branches=85 --test-coverage-functions=100",
+    "test": "node --test --experimental-test-coverage --test-coverage-include=js/logic.js --test-coverage-lines=95 --test-coverage-branches=85 --test-coverage-functions=100",
     "test:qml": "bash test/qml/run.sh",
     "test:e2e": "bash test/e2e/run.sh"
   }

@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // Opens a saved setup: walks the plan `Logic.planOpenSetup` already worked
 // out, one window at a time. Splitting only ever divides whichever single

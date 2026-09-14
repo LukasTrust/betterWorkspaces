@@ -9,7 +9,7 @@ const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const path = require("node:path")
 
-const { SETTING_DEFAULTS } = require("../logic.js")
+const { SETTING_DEFAULTS } = require("../js/logic.js")
 
 const root = path.join(__dirname, "..")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"))
@@ -17,9 +17,9 @@ const barWidget = manifest.barWidget ?? {}
 
 test("declares a bar widget, the overlay that edits its settings, and the boot service", () => {
   assert.deepEqual(manifest.kinds, ["bar-widget", "overlay", "service"])
-  assert.equal(manifest.entryPoints.barWidget, "Workspaces.qml")
-  assert.equal(manifest.entryPoints.overlay, "Overlay.qml")
-  assert.equal(manifest.entryPoints.service, "Service.qml")
+  assert.equal(manifest.entryPoints.barWidget, "qml/Workspaces.qml")
+  assert.equal(manifest.entryPoints.overlay, "qml/Overlay.qml")
+  assert.equal(manifest.entryPoints.service, "qml/Service.qml")
 })
 
 test("every declared entry point exists", () => {

@@ -5,7 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import "helpers"
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // The overview. The layer-shell window around it isn't covered here - a
 // layer-shell surface can't be driven headless, which is why the view itself

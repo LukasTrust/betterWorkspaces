@@ -49,6 +49,8 @@ nothing else to page through. A card is the shape of the screen its workspace
 is on, and every window carries its app icon in the corner, so a black
 terminal is still obviously a terminal.
 
+<img src="screenshot-overview.png" alt="Better Workspaces overview" width="700">
+
 ### Opening it
 
 Three ways, none of which touches your Hyprland bindings:
@@ -244,6 +246,8 @@ Changes apply as you make them and are written back to your `shell.json`
 entry. Values outside the allowed range are pulled to the nearest one, and
 anything unusable falls back to the default.
 
+<img src="screenshot-settings.png" alt="Better Workspaces settings" width="500">
+
 `Esc`, or a click outside the card, closes the editor - or, when you got
 there through the overview's gear, steps back to the overview so you can see
 what your change did.
@@ -277,6 +281,8 @@ entry:
   "groupApps": false,      // one icon per app, with a count badge, instead of one per window
   "gameIcons": true,       // use a Proton game's own icon instead of the generic fallback
   "overviewEnabled": true, // clicking the workspace you are on opens the overview
+  "setupTargetMode": "add",     // "add" or "replace" existing windows when opening a setup on a busy workspace
+  "focusAfterSetupDrop": true,  // switch to the target workspace and close the overview after dropping a setup
   "icons": {
     // Override the icon for a window class/appId. Value can be either an
     // icon-theme name or a literal glyph/emoji.
@@ -333,7 +339,7 @@ Before publishing a change, also validate the plugin the way Omarchy does:
 
 ```bash
 omarchy plugin validate .
-qmllint -I "$OMARCHY_PATH/shell" *.qml
+qmllint -I "$OMARCHY_PATH/shell" qml/*.qml
 ```
 
 ## License

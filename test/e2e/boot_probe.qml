@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import "plugin" as Plugin
+import "plugin/qml" as Plugin
 
 // The boot service in isolation, for test/e2e/run.sh's boot check. The
 // launching shell points HOME at a throwaway directory, so a run here never

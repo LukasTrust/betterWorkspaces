@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
 import "helpers"
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // The plugin's own settings form. The overlay window around it isn't
 // covered here: a layer-shell window can't be driven headless, which is why

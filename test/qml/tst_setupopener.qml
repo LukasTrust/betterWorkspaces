@@ -3,7 +3,7 @@ import QtTest
 import Quickshell
 import Quickshell.Hyprland
 import "helpers"
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // Opening a saved setup: the sequencing (launch, wait, preselect the next
 // one) is tested here headless; the actual dispatch/launch calls only need

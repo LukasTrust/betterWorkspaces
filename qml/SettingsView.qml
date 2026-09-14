@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // The plugin's own settings form, shown by Overlay.qml. Every change is
 // written straight back to this widget's shell.json entry, so the bar

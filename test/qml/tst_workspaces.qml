@@ -5,7 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import "helpers"
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // Baseline behaviour of the bar widget as it ships today. Runs against the
 // stand-in modules in stubs/, see run.sh.

@@ -6,7 +6,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // The save dialog, shown by Overlay.qml over a workspace's own save button.
 // Windowless, like Overview.qml and SettingsView.qml, so it can be driven

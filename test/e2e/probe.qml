@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import "plugin" as Plugin
+import "plugin/qml" as Plugin
 
 // Shell config for the throwaway Quickshell instance run.sh starts: its own
 // IPC socket, no window. run.sh places it next to symlinks to Omarchy's

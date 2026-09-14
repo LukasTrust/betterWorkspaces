@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // Runs once when the shell starts: opens whichever saved setups are
 // assigned a boot workspace (the "Beim Start öffnen" section of

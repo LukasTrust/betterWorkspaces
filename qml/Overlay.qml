@@ -5,7 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // This plugin's summonable surface. One overlay serves every view; the
 // payload picks which one:

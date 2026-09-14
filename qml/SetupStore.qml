@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // Reads and writes this plugin's saved setups:
 // `~/.config/omarchy/better-workspaces/setups.json`. One shared store, so

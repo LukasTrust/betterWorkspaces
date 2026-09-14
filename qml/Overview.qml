@@ -5,7 +5,7 @@ import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // The overview: every workspace as a card, laid out to fill the screen, with
 // its windows drawn where they really sit. That is the whole view - the cards

@@ -7,7 +7,7 @@ import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // Drop-in replacement for omarchy.workspaces that also shows a small icon
 // for every window open on each workspace - "what's actually in there" at

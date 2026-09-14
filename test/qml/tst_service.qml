@@ -3,7 +3,7 @@ import QtTest
 import Quickshell
 import Quickshell.Hyprland
 import "helpers"
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // The boot service: opens whichever saved setups are assigned a boot
 // workspace, once per Hyprland session. No real filesystem or process here -

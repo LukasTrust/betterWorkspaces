@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import "helpers"
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // The save dialog. No window of its own, so it's driven headless the same
 // way Overview.qml and SettingsView.qml are.

@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-import "logic.js" as Logic
+import "../js/logic.js" as Logic
 
 // Turns a Hyprland window into the icon to draw for it, and remembers the
 // answer per window class. Both views need this - the bar widget for its

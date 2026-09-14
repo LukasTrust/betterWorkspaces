@@ -43,7 +43,7 @@ const {
   shouldRunBoot,
   bootEntries,
   remainingCloseTargets
-} = require("../logic.js")
+} = require("../js/logic.js")
 
 // The shape Workspaces.qml hands computeWorkspaceIds: what Hyprland knows
 // about right now. Ids listed without a "+" are empty workspaces.

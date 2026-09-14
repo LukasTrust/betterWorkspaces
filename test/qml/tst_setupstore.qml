@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import "../.." as Plugin
+import "../../qml" as Plugin
 
 // This plugin's own setups.json store. No real filesystem here - the
 // FileView and Process stand-ins record what they were asked to do, so
