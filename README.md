@@ -7,20 +7,37 @@ where, not just which workspaces are occupied.
 
 Icons come from your installed applications' own icon (resolved the same way
 the Omarchy menu resolves app icons), so new apps get an icon automatically
-with no configuration. Proton-run games in your Steam library get their own
-icon too (`gameIcons`, resolved straight from the window class - no extra
-process, no polling) - this covers games launched from Steam itself as well
-as other launchers like Heroic, as long as Proton is doing the running and
-the game is also in your Steam library. It doesn't cover native Linux game
-binaries: Steam only tags the window class for Proton games, so a native
-build (e.g. Valheim) shows the generic icon like any other unrecognized app,
-unless you override it. You can override any app's icon per-window-class if
-the automatic match isn't the one you want.
+with no configuration.
+
+**Web apps** get the icon of the launcher that opened them. A Chromium-family
+browser (Chromium, Chrome, Brave, Edge, Vivaldi, Helium, ...) names an
+`--app=<url>` window after its URL, which is exactly how `omarchy webapp
+install` launchers open - so the window is matched to the installed launcher
+whose command opens the same site. No list of known sites, and nothing is
+guessed from the page title. Installed PWAs from Chromium's "Install app",
+Firefox PWAs ([PWAsForFirefox](https://github.com/filips123/PWAsForFirefox))
+and GNOME Web apps ship a desktop entry named after their window class, so
+they match directly. A normal browser window with several tabs is one window
+and keeps the browser's icon.
+
+**Games** get their own icon too (`gameIcons`), whichever launcher started
+them. Steam, Proton/umu, Heroic and Lutris each start a game with
+environment variables saying which game it is (`SteamAppId`,
+`HEROIC_APP_NAME`, `GAME_NAME`), and every window of the game inherits them.
+So the icon is Steam's `steam_icon_<appid>`, Heroic's cached cover icon
+(`~/.config/heroic/icons`, or the Flatpak's), or Lutris's `lutris_<slug>`
+icon or the game's menu shortcut. This works for native Linux builds as well
+as Proton games. Steam Proton games are also still recognized straight from
+their `steam_app_<appid>` window class.
+
+You can override any app's icon per-window-class if the automatic match isn't
+the one you want.
 
 Everything is resolved from Hyprland's own IPC event stream and Quickshell's
 built-in desktop-entry/icon-theme lookups - no polling, no shelling out to
-external commands - and icon lookups are cached by window class, so repeat
-windows of the same app (e.g. two terminals) never repeat the lookup.
+external commands. Icon lookups are cached by window class, so repeat windows
+of the same app (e.g. two terminals) never repeat the lookup. The game check
+reads each window's `/proc/<pid>/environ` once and caches the answer.
 
 <img src="preview.png" alt="Better Workspaces screenshot" width="600">
 
@@ -326,7 +343,7 @@ entry:
   "minWorkspaces": 5,      // workspaces shown even while empty, counted from 1
   "hideEmpty": false,      // show only workspaces with windows in them
   "groupApps": false,      // one icon per app, with a count badge, instead of one per window
-  "gameIcons": true,       // use a Proton game's own icon instead of the generic fallback
+  "gameIcons": true,       // a Steam/Heroic/Lutris game's own icon instead of the generic fallback
   "overviewEnabled": true, // clicking the workspace you are on opens the overview
   "setupTargetMode": "add",     // "add" or "replace" existing windows when opening a setup on a busy workspace
   "focusAfterSetupDrop": true,  // switch to the target workspace and close the overview after dropping a setup

@@ -77,7 +77,7 @@ var SETTING_FIELDS = [
     type: "boolean",
     fallback: true,
     label: "Game icons",
-    description: "Show a game's own icon for Proton-run games that are in your Steam library, including ones launched from Heroic or similar. Native Linux game binaries aren't covered. Resolved once per window class and cached, same as every other icon; turn off to skip that extra lookup entirely."
+    description: "Show a game's own icon for games started from Steam, Heroic or Lutris, native or Proton alike, read from the environment the launcher gives the game. Resolved once per game window and cached; turn off to skip that extra lookup entirely."
   },
   {
     key: "overviewEnabled",

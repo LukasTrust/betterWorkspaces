@@ -13,6 +13,8 @@ QtObject {
   // Counts lookups per icon name, so tests can assert on the widget's icon
   // cache the same way they do for DesktopEntries.testStats.lookups.
   property var testIconPathCalls: ({})
+  // Environment variable name -> value, for env().
+  property var testEnv: ({})
 
   function iconPath(icon, check) {
     var name = String(icon)
@@ -34,13 +36,15 @@ QtObject {
   }
 
   function env(name) {
-    return ""
+    var value = root.testEnv[String(name)]
+    return value === undefined ? "" : value
   }
 
   function testReset() {
     root.testThemeIcons = {
       "application-x-executable": "image://test/application-x-executable"
     }
+    root.testEnv = ({})
     root.testExecuted = []
     root.testIconPathCalls = ({})
   }

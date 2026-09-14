@@ -360,7 +360,12 @@ TestCase {
   // for a fresh one on the way in.
   function test_asksHyprlandForFreshGeometryWhenItOpens() {
     threeWorkspaces()
-    var view = createOverview()
+    // Game icons off: the icon resolver asks for its own refresh for windows
+    // with no pid yet (see IconResolver.requestIpcRefresh), and this counts
+    // only the overview's.
+    var view = createOverview({
+      gameIcons: false
+    })
     compare(Hyprland.testToplevelRefreshes, 1)
 
     view.active = false

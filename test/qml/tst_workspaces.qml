@@ -626,6 +626,137 @@ TestCase {
     compare(Quickshell.testIconPathCalls["steam_icon_570"], 1)
   }
 
+  // ---- web apps and launcher games ------------------------------------------
+
+  function test_resolvesWebAppIconFromTheLauncherOpeningItsSite() {
+    DesktopEntries.testSetEntries({
+      "chromium": {
+        id: "chromium",
+        name: "Chromium",
+        icon: "chromium",
+        execString: "/usr/bin/chromium %U"
+      },
+      "HEY": {
+        id: "HEY",
+        name: "HEY",
+        icon: "hey",
+        execString: "omarchy-launch-webapp \"https://app.hey.com\""
+      }
+    })
+    Quickshell.testThemeIcons = withThemeIcons({
+      hey: "image://test/hey",
+      chromium: "image://test/chromium"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("chrome-app.hey.com__-Default"), makeWindow("brave-app.hey.com__-Default")])]
+    var widget = createWidget()
+    compare(iconSlot(widget, 1, 0).icon.source, "image://test/hey")
+    compare(iconSlot(widget, 1, 1).icon.source, "image://test/hey")
+  }
+
+  function makeProcessWindow(windowClass, pid) {
+    var window = makeWindow(windowClass)
+    window.lastIpcObject = {
+      "class": windowClass,
+      "initialClass": windowClass,
+      "pid": pid
+    }
+    return window
+  }
+
+  function environ(vars) {
+    return vars.join(String.fromCharCode(0)) + String.fromCharCode(0)
+  }
+
+  // The widget reads a window's environment the moment it first draws it, so
+  // a test seeds the reader afterwards and drops the caches to re-resolve.
+  function seedFiles(widget, files) {
+    var reader = findChild(findChild(widget, "iconResolver"), "fileReader")
+    verify(reader !== null, "icon resolver should have a file reader")
+    for (var path in files)
+      reader.testSetContent(files[path], path)
+    findChild(widget, "iconResolver").clearCache()
+  }
+
+  // Live, a window opened after the shell started has no `lastIpcObject`
+  // (so no pid) until Hyprland's clients are fetched again.
+  function test_asksHyprlandOnceForTheClientsOfWindowsWithoutAPid() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("foot"), makeWindow("foot")])]
+    var widget = createWidget()
+    tryCompare(Hyprland, "testToplevelRefreshes", 1)
+    wait(50)
+    compare(Hyprland.testToplevelRefreshes, 1)
+
+    var off = createWidget({
+      gameIcons: false
+    })
+    wait(50)
+    compare(Hyprland.testToplevelRefreshes, 1)
+  }
+
+  function test_resolvesHeroicGameIconFromItsLaunchEnvironment() {
+    Quickshell.testEnv = {
+      HOME: "/home/u"
+    }
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeProcessWindow("steam_app_default", 4242), makeProcessWindow("steam_app_default", 4343)])]
+    var widget = createWidget()
+    seedFiles(widget, {
+      "/proc/4242/environ": environ(["PATH=/usr/bin", "HEROIC_APP_NAME=CrabEA"]),
+      "/home/u/.config/heroic/icons/CrabEA.jpg": "jpeg bytes",
+      "/proc/4343/environ": environ(["PATH=/usr/bin"])
+    })
+    tryCompare(iconSlot(widget, 1, 0).icon, "source", "file:///home/u/.config/heroic/icons/CrabEA.jpg")
+    // Same class, but no launcher environment: the ordinary lookup.
+    compare(iconSlot(widget, 1, 1).icon.source, "image://test/application-x-executable")
+  }
+
+  function test_resolvesLutrisGameIconFromItsMenuShortcut() {
+    DesktopEntries.testSetEntries({
+      "net.lutris.hoi4-3": {
+        id: "net.lutris.hoi4-3",
+        name: "Hearts of Iron IV",
+        icon: "lutris_hearts-of-iron-iv",
+        execString: "env LUTRIS_SKIP_INIT=1 lutris lutris:rungameid/3"
+      }
+    })
+    Quickshell.testThemeIcons = withThemeIcons({
+      "lutris_hearts-of-iron-iv": "image://test/lutris_hoi4"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeProcessWindow("hoi4", 77)])]
+    var widget = createWidget()
+    seedFiles(widget, {
+      "/proc/77/environ": environ(["GAME_NAME=Hearts of Iron IV", "STORE=steam"])
+    })
+    tryCompare(iconSlot(widget, 1, 0).icon, "source", "image://test/lutris_hoi4")
+  }
+
+  function test_launcherGameIconsRespectOverridesAndTheGameIconsSetting() {
+    Quickshell.testThemeIcons = withThemeIcons({
+      "steam_icon_892970": "image://test/valheim"
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeProcessWindow("valheim.x86_64", 5)])]
+    var files = {
+      "/proc/5/environ": environ(["SteamAppId=892970"])
+    }
+
+    var plain = createWidget()
+    seedFiles(plain, files)
+    tryCompare(iconSlot(plain, 1, 0).icon, "source", "image://test/valheim")
+
+    var overridden = createWidget({
+      icons: {
+        "valheim.x86_64": "🪓"
+      }
+    })
+    seedFiles(overridden, files)
+    compare(iconSlot(overridden, 1, 0).icon.value, "🪓")
+
+    var off = createWidget({
+      gameIcons: false
+    })
+    seedFiles(off, files)
+    compare(iconSlot(off, 1, 0).icon.source, "image://test/application-x-executable")
+  }
+
   function test_resolvesEachWindowClassOnlyOnce() {
     DesktopEntries.testSetEntries({
       foot: {
