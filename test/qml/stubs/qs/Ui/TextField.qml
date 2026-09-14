@@ -14,6 +14,7 @@ Item {
   property string placeholderText: ""
   property color foreground: "#ffffff"
   property color accent: "#88aaff"
+  property var background: null
 
   signal accepted()
 

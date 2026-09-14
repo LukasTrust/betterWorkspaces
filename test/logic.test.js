@@ -5,6 +5,7 @@ const {
   computeWorkspaceIds,
   sameIds,
   computeWindowKey,
+  matchesSearchQuery,
   classifyIconValue,
   lookupIconOverride,
   steamAppId,
@@ -40,7 +41,8 @@ const {
   planOpenSetup,
   assignBootWorkspace,
   shouldRunBoot,
-  bootEntries
+  bootEntries,
+  remainingCloseTargets
 } = require("../logic.js")
 
 // The shape Workspaces.qml hands computeWorkspaceIds: what Hyprland knows
@@ -119,6 +121,15 @@ test("computeWindowKey prefers class, then initialClass, then the wayland appId"
   assert.equal(computeWindowKey("", "Firefox", "firefox-appid"), "Firefox")
   assert.equal(computeWindowKey("", "", "org.wezfurlong.wezterm"), "org.wezfurlong.wezterm")
   assert.equal(computeWindowKey("", "", ""), "")
+})
+
+test("matchesSearchQuery matches title or class, case-insensitively", () => {
+  assert.equal(matchesSearchQuery("Inbox - Thunderbird", "thunderbird", ""), true)
+  assert.equal(matchesSearchQuery("Inbox - Thunderbird", "thunderbird", "  "), true)
+  assert.equal(matchesSearchQuery("Inbox - Thunderbird", "thunderbird", "MAIL"), false)
+  assert.equal(matchesSearchQuery("Inbox - Thunderbird", "thunderbird", "thunder"), true)
+  assert.equal(matchesSearchQuery("Inbox - Thunderbird", "org.mozilla.Thunderbird", "mozilla"), true)
+  assert.equal(matchesSearchQuery(null, null, "x"), false)
 })
 
 test("classifyIconValue resolves images, else falls back to literal text", () => {
@@ -770,6 +781,18 @@ test("planSetupOpen behaves the same in both modes on an empty workspace", () =>
   assert.deepEqual(planSetupOpen([], "add"), [])
   assert.deepEqual(planSetupOpen([], "replace"), [])
   assert.deepEqual(planSetupOpen(null, "replace"), [])
+})
+
+test("remainingCloseTargets keeps only the addresses still actually open", () => {
+  assert.deepEqual(remainingCloseTargets(["a", "b"], ["a", "c"]), ["a"])
+  assert.deepEqual(remainingCloseTargets(["a", "b"], ["c", "d"]), [])
+  assert.deepEqual(remainingCloseTargets(["a", "b"], ["a", "b"]), ["a", "b"])
+})
+
+test("remainingCloseTargets copes with nothing pending or nothing open", () => {
+  assert.deepEqual(remainingCloseTargets([], ["a"]), [])
+  assert.deepEqual(remainingCloseTargets(["a"], []), [])
+  assert.deepEqual(remainingCloseTargets(null, null), [])
 })
 
 test("assignBootWorkspace sets a setup's boot workspace", () => {

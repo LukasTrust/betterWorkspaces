@@ -38,6 +38,10 @@ ws=""
 ws2=""
 probe_dir=""
 probe_pid=""
+boot_probe_dir=""
+boot_probe_pid=""
+boot_home=""
+boot_xdg_runtime=""
 
 ok() {
   passed=$((passed + 1))
@@ -80,6 +84,13 @@ cleanup() {
     wait "$probe_pid" 2>/dev/null || true
   fi
   [[ -z $probe_dir ]] || rm -rf "$probe_dir"
+  if [[ -n $boot_probe_pid ]]; then
+    kill "$boot_probe_pid" 2>/dev/null || true
+    wait "$boot_probe_pid" 2>/dev/null || true
+  fi
+  [[ -z $boot_probe_dir ]] || rm -rf "$boot_probe_dir"
+  [[ -z $boot_home ]] || rm -rf "$boot_home"
+  [[ -z $boot_xdg_runtime ]] || rm -rf "$boot_xdg_runtime"
 }
 trap cleanup EXIT
 
@@ -102,6 +113,51 @@ start_probe() {
     fi
     sleep 0.2
   done
+}
+
+# The boot service (Plugin.Service, `boot_probe.qml`) in its own probe,
+# entirely separate from the widget one above: its own directory and IPC
+# socket, and - critically - its own HOME and XDG_RUNTIME_DIR, so it never
+# reads or writes the real user's setups.json or boot guard. It has no IPC
+# target of its own to wait on (nothing to summon, it just runs), so
+# readiness is whatever it actually does - the caller polls for that.
+start_boot_probe() { # <window class the seeded setup opens> <boot workspace id>
+  boot_home=$(mktemp -d "${TMPDIR:-/tmp}/bw-e2e-boot-home.XXXXXX")
+  boot_xdg_runtime=$(mktemp -d "${TMPDIR:-/tmp}/bw-e2e-boot-runtime.XXXXXX")
+  boot_probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/bw-e2e-boot.XXXXXX")
+  ln -s "$repo" "$boot_probe_dir/plugin"
+  cp "$here/boot_probe.qml" "$boot_probe_dir/shell.qml"
+
+  mkdir -p "$boot_home/.config/omarchy/better-workspaces"
+  cat >"$boot_home/.config/omarchy/better-workspaces/setups.json" <<EOF
+{
+  "schemaVersion": 1,
+  "setups": {
+    "E2EBoot": {
+      "windows": [{
+        "recipe": { "type": "argv", "argv": ["foot", "--app-id=$1", "--title=$1", "sleep", "infinity"] },
+        "class": "$1",
+        "floating": false,
+        "fullscreen": false,
+        "rect": { "x": 0, "y": 0, "width": 1, "height": 1 }
+      }],
+      "bootWorkspace": $2
+    }
+  }
+}
+EOF
+
+  HOME="$boot_home" BW_E2E_BOOT_RUNTIME_DIR="$boot_xdg_runtime/better-workspaces" qs -p "$boot_probe_dir" \
+    >"$boot_probe_dir/log-$(date +%s%N).txt" 2>&1 &
+  boot_probe_pid=$!
+}
+
+stop_boot_probe() {
+  [[ -z $boot_probe_pid ]] || {
+    kill "$boot_probe_pid" 2>/dev/null || true
+    wait "$boot_probe_pid" 2>/dev/null || true
+    boot_probe_pid=""
+  }
 }
 
 state() {
@@ -299,6 +355,80 @@ else
     close_window "$pid"
   done
   pids=()
+fi
+
+# ---- the boot service -------------------------------------------------------
+#
+# Only meaningful against an isolated probe: it needs its own throwaway
+# HOME/XDG_RUNTIME_DIR (see start_boot_probe), which only makes sense for a
+# probe process this script owns - the live shell already has its own real
+# guard file from whenever Hyprland actually started, and touching that here
+# would be indistinguishable from a bug in the real thing.
+if [[ $mode == live ]]; then
+  echo "  skip  boot service: only meaningful against an isolated probe, not the live shell"
+else
+  boot_ws=""
+  boot_existing=$(hyprctl workspaces -j | jq -c '[.[].id]')
+  for candidate in 10 9 8 7 6; do
+    [[ $candidate != "$ws" && $candidate != "${ws2:-}" ]] || continue
+    jq -e --argjson id "$candidate" 'index($id) == null' <<<"$boot_existing" >/dev/null || continue
+    boot_ws=$candidate
+    break
+  done
+
+  if [[ -z $boot_ws ]]; then
+    echo "  skip  boot service: no free workspace between 6 and 10 left to test on"
+  else
+    boot_class="$PREFIX-boot"
+    start_boot_probe "$boot_class" "$boot_ws"
+
+    boot_deadline=$((SECONDS + TIMEOUT_S))
+    until [[ -n $(address_of "$boot_class") ]]; do
+      if ((SECONDS >= boot_deadline)); then
+        not_ok "boot service opens the assigned setup" \
+          "window never appeared; log: $(sed 's/\x1b\[[0-9;]*m//g' "$boot_probe_dir"/log-*.txt 2>/dev/null | tail -5)"
+        break
+      fi
+      sleep 0.2
+    done
+
+    if [[ -n $(address_of "$boot_class") ]]; then
+      boot_opened_ws=$(hyprctl clients -j | jq -r --arg class "$boot_class" '.[] | select(.class == $class) | .workspace.id')
+      if [[ $boot_opened_ws == "$boot_ws" ]]; then
+        ok "boot service opens the assigned setup on its workspace"
+      else
+        not_ok "boot service opens the assigned setup on its workspace" \
+          "opened on $boot_opened_ws, wanted $boot_ws"
+      fi
+    fi
+
+    if [[ -f "$boot_xdg_runtime/better-workspaces/boot-guard" ]]; then
+      ok "boot service writes the guard file"
+    else
+      not_ok "boot service writes the guard file" "not found under $boot_xdg_runtime/better-workspaces"
+    fi
+
+    stop_boot_probe
+
+    # A restart in the same Hyprland session (e.g. `omarchy restart shell`)
+    # reuses the same HOME/guard directory here, so the guard the run above
+    # wrote is still there - the whole point of it.
+    HOME="$boot_home" BW_E2E_BOOT_RUNTIME_DIR="$boot_xdg_runtime/better-workspaces" qs -p "$boot_probe_dir" \
+      >"$boot_probe_dir/log-$(date +%s%N).txt" 2>&1 &
+    boot_probe_pid=$!
+    sleep 2
+    boot_count=$(hyprctl clients -j | jq --arg class "$boot_class" '[.[] | select(.class == $class)] | length')
+    if [[ $boot_count == "1" ]]; then
+      ok "a second run in the same session does not reopen it"
+    else
+      not_ok "a second run in the same session does not reopen it" \
+        "found $boot_count window(s) of class $boot_class, wanted 1"
+    fi
+    stop_boot_probe
+
+    hyprctl clients -j | jq -r --arg class "$boot_class" '.[] | select(.class == $class) | .pid' |
+      while read -r boot_pid; do close_window "$boot_pid"; done
+  fi
 fi
 
 echo

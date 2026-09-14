@@ -80,6 +80,66 @@ Item {
     for (var i = 0; i < targets.length; i++)
       if (addresses.indexOf(String(targets[i].address)) !== -1)
         root.closeWindow(targets[i])
+    return addresses
+  }
+
+  // ---- waiting for a `replace`'s closes before opening -----------------------
+  //
+  // A plain `close()` is a request, not an instant removal - an app can ask
+  // "save changes?" first. Opening the setup right away would land its
+  // windows on a workspace that (for a moment, or a lot longer) still has
+  // the ones being replaced on it too. `callback` runs once every address
+  // asked to close is actually gone, or after `closeWaitMs` regardless - an
+  // app stuck on a dialog forever can't hold a setup open hostage.
+  property int closeWaitMs: 3000
+  property var _pendingCloseAddresses: []
+  property var _pendingCloseCallback: null
+
+  function currentToplevelAddresses() {
+    var values = Hyprland.toplevels.values
+    var list = []
+    for (var i = 0; i < values.length; i++)
+      list.push(String(values[i].address))
+    return list
+  }
+
+  function waitForClose(addresses, callback) {
+    var pending = Logic.remainingCloseTargets(addresses, root.currentToplevelAddresses())
+    if (pending.length === 0) {
+      callback()
+      return
+    }
+    root._pendingCloseAddresses = pending
+    root._pendingCloseCallback = callback
+    closeWaitTimer.restart()
+  }
+
+  function _checkPendingClose() {
+    if (!root._pendingCloseCallback)
+      return
+    root._pendingCloseAddresses = Logic.remainingCloseTargets(root._pendingCloseAddresses, root.currentToplevelAddresses())
+    if (root._pendingCloseAddresses.length === 0)
+      root._settlePendingClose()
+  }
+
+  function _settlePendingClose() {
+    closeWaitTimer.stop()
+    var callback = root._pendingCloseCallback
+    root._pendingCloseCallback = null
+    root._pendingCloseAddresses = []
+    if (callback) callback()
+  }
+
+  Connections {
+    target: Hyprland.toplevels
+    function onObjectRemovedPost() { root._checkPendingClose() }
+  }
+
+  Timer {
+    id: closeWaitTimer
+    objectName: "closeWaitTimer"
+    interval: root.closeWaitMs
+    onTriggered: root._settlePendingClose()
   }
 
   // > 0 while a drop's `focusAfterSetupDrop: false` owes a jump back to
@@ -99,14 +159,16 @@ Item {
       return
 
     var targets = root.toplevelsOf(workspaceId)
-    if (root.setupTargetMode === "replace")
-      root.closeExisting(targets, root.setupTargetMode)
+    var closeAddresses = root.setupTargetMode === "replace" ? root.closeExisting(targets, root.setupTargetMode) : []
 
     var cameFrom = root.focusedId
     root.focusWorkspace(workspaceId)
     root._returnFocusId = (fromDrop && !root.focusAfterSetupDrop && cameFrom !== workspaceId) ? cameFrom : 0
 
-    root.opener.open(setup, root.monitorAreaFor(workspaceId))
+    var area = root.monitorAreaFor(workspaceId)
+    root.waitForClose(closeAddresses, function () {
+      root.opener.open(setup, area)
+    })
   }
 
   function openSetupFromChip(name) {
@@ -357,6 +419,7 @@ Item {
     if (root.closing)
       return
     root.closing = true
+    root.clearSearch()
     closeTimer.restart()
   }
 
@@ -483,6 +546,66 @@ Item {
     root.openWorkspace(index < root.workspaceIds.length ? root.workspaceIds[index] : root.newWorkspaceId)
   }
 
+  // ---- search ---------------------------------------------------------------
+  //
+  // The query box sits over the cards always, not just once summoned - "/"
+  // only moves keyboard focus into it, the way it would on a page with a
+  // search field already on screen. Every window's own thumb dims unless
+  // it matches, across every workspace at once, so a window you can't place
+  // by eye is still findable by title or app. Enter goes straight to the
+  // first match in workspace order - the same order the cards are laid out
+  // in - without making the user click it.
+
+  property string searchQuery: ""
+
+  function focusSearch() {
+    searchInput.forceActiveFocus()
+  }
+
+  // Clears the query and hands keyboard focus back to the grid - what Esc
+  // does from inside the search field, and what closing the whole overview
+  // does too, so reopening it always starts with a clean search.
+  function clearSearch() {
+    root.searchQuery = ""
+    searchInput.text = ""
+    // Explicitly giving up the field's own focus claim, not just asking
+    // the scope to refocus itself: forceActiveFocus() on the scope alone
+    // doesn't override a focus item something already forced directly.
+    searchInput.focus = false
+    root.grabKeys()
+  }
+
+  // Hyprland's own class (preferred by icon resolution too) rather than the
+  // window title alone, so "firefox" finds every open Firefox window even
+  // when none of their titles happen to say so.
+  function windowClass(toplevel) {
+    return iconResolver.windowKey(toplevel)
+  }
+
+  function windowMatchesSearch(toplevel) {
+    return Logic.matchesSearchQuery(root.windowTitle(toplevel), root.windowClass(toplevel), root.searchQuery)
+  }
+
+  // The first match, in the same order the cards are laid out in, so Enter
+  // goes wherever the eye would land first too.
+  function firstSearchMatch() {
+    if (String(root.searchQuery || "").trim().length === 0)
+      return null
+    for (var i = 0; i < root.workspaceIds.length; i++) {
+      var windows = root.toplevelsOf(root.workspaceIds[i])
+      for (var j = 0; j < windows.length; j++)
+        if (root.windowMatchesSearch(windows[j]))
+          return windows[j]
+    }
+    return null
+  }
+
+  function openFirstSearchMatch() {
+    var match = root.firstSearchMatch()
+    if (match)
+      root.openWindow(match)
+  }
+
   readonly property var settingsIcon: {
     var themed = Quickshell.iconPath("preferences-system", true)
     return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\u2699" }
@@ -525,6 +648,13 @@ Item {
       }
       if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
         root.openSelection()
+        event.accepted = true
+        return
+      }
+      // Reaching here at all means the search field isn't focused - once
+      // it is, "/" just types a literal slash into it like anything else.
+      if (event.key === Qt.Key_Slash) {
+        root.focusSearch()
         event.accepted = true
         return
       }
@@ -617,6 +747,54 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.settingsRequested()
+      }
+    }
+
+    // Always on screen, not just once summoned: "/" only moves keyboard
+    // focus into it (same reasoning as the settings gear and save button
+    // staying visible rather than needing a menu to find them first).
+    // Every window's own thumb dims unless it matches, so a window that's
+    // hard to place by eye is still findable by title or app.
+    Rectangle {
+      id: searchBar
+      objectName: "searchBar"
+      anchors.top: parent.top
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.margins: root.gap
+      z: 2
+      width: Math.min(Style.space(360), parent.width - Style.space(96))
+      height: Style.space(40)
+      radius: height / 2
+      color: Color.menu.background
+      opacity: root.closing || !root.active ? 0 : 1
+      border.width: Math.max(1, Style.space(2))
+      border.color: searchInput.activeFocus ? Color.bar.active : Color.menu.border
+
+      Behavior on opacity {
+        NumberAnimation {
+          duration: root.animationDuration
+          easing.type: Easing.OutCubic
+        }
+      }
+
+      TextField {
+        id: searchInput
+        objectName: "searchInput"
+        anchors.fill: parent
+        anchors.leftMargin: Style.space(16)
+        anchors.rightMargin: Style.space(16)
+        background: null
+        placeholderText: "Search windows..."
+        foreground: Color.menu.text
+        onTextChanged: root.searchQuery = text
+        onAccepted: root.openFirstSearchMatch()
+
+        Keys.onPressed: function (event) {
+          if (event.key === Qt.Key_Escape) {
+            root.clearSearch()
+            event.accepted = true
+          }
+        }
       }
     }
 
@@ -724,6 +902,10 @@ Item {
                   height: cardSurface.height
                 })
 
+                // True whenever the query is empty, so a search field
+                // nobody has typed into yet never dims anything.
+                readonly property bool matchesSearch: root.windowMatchesSearch(windowSlot.modelData)
+
                 visible: windowSlot.rect !== null
                 x: windowSlot.rect ? windowSlot.rect.x : 0
                 y: windowSlot.rect ? windowSlot.rect.y : 0
@@ -748,6 +930,18 @@ Item {
                   Drag.source: windowDragHandle
                   Drag.hotSpot.x: width / 2
                   Drag.hotSpot.y: height / 2
+
+                  // Dimmed rather than hidden while searching: a window
+                  // still needs to be clickable and draggable even when it
+                  // doesn't match, same as before search existed at all.
+                  opacity: windowSlot.matchesSearch ? 1 : 0.25
+
+                  Behavior on opacity {
+                    NumberAnimation {
+                      duration: 120
+                      easing.type: Easing.OutCubic
+                    }
+                  }
 
                   WindowThumb {
                     objectName: "cardThumb"

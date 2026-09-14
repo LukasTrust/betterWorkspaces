@@ -105,6 +105,33 @@ TestCase {
     tryCompare(guardOf(service), "testWrites", ["sig-a"])
   }
 
+  // A launched process lands on whichever workspace is focused when it
+  // maps, not wherever it was launched "for" - found live (test/e2e/run.sh):
+  // without this, every boot setup opened wherever Hyprland already
+  // happened to be focused instead of its own assigned workspace.
+  function test_focusesTheAssignedWorkspaceBeforeOpeningEachSetup() {
+    var service = makeService()
+    seedSetups(service, { Work: anArgvSetup(["work-app"], 3) })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(Quickshell.testExecuted, [["work-app"]])
+  }
+
+  function test_focusesEachSetupsOwnWorkspaceInTurn() {
+    var service = makeService()
+    seedSetups(service, {
+      Games: anArgvSetup(["games-app"], 5),
+      Work: anArgvSetup(["work-app"], 1)
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })"])
+    insertToplevel("1")
+    tryCompare(Hyprland, "testDispatched", [
+      "hl.dsp.focus({ workspace = \"1\" })",
+      "hl.dsp.focus({ workspace = \"5\" })"
+    ])
+  }
+
   // `omarchy restart shell` recreates the service, but the real guard file
   // on disk already holds this session's signature. The stand-in FileView
   // has no real filesystem behind it - a fresh service in these tests always

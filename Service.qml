@@ -31,6 +31,15 @@ Item {
   property var _queue: []
   property int _queueIndex: 0
 
+  // Every Hyprland request this makes, in order - so a test can see the
+  // actual sequence, same reasoning as `SetupOpener.dispatched`.
+  signal dispatched(string request)
+
+  function dispatch(request) {
+    Hyprland.dispatch(request)
+    root.dispatched(request)
+  }
+
   // The one store instance - same setups.json the save dialog and the
   // overview's setups strip read, so boot always matches what's configured.
   SetupStore {
@@ -97,6 +106,11 @@ Item {
       root._openNext()
       return
     }
+    // A launched process lands on whichever workspace is focused when it
+    // maps, not wherever it was launched "for" - `Overview.openSetup` does
+    // the same focus-first dance for the interactive path, and boot has no
+    // "workspace you're already on" to lean on instead.
+    root.dispatch("hl.dsp.focus({ workspace = \"" + entry.workspaceId + "\" })")
     setupOpener.open(setup, root.monitorArea(root.monitorFor(entry.workspaceId)))
   }
 

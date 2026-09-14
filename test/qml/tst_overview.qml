@@ -671,6 +671,97 @@ TestCase {
     compare(view.selectedIndex, 2)
   }
 
+  // ---- search -----------------------------------------------------------
+
+  // The field is on screen from the start - there's nothing to open - "/"
+  // only moves keyboard focus into it, same as a page that already has a
+  // search box sitting on it.
+  function test_theSearchFieldIsAlwaysThereAndSlashFocusesIt() {
+    threeWorkspaces()
+    var view = createOverview()
+    var search = findChild(view, "searchInput")
+    verify(findChild(view, "searchBar").visible)
+    verify(!search.activeFocus)
+
+    keyClick(Qt.Key_Slash)
+    verify(search.activeFocus)
+  }
+
+  function test_typingInSearchDimsNonMatchingWindows() {
+    threeWorkspaces()
+    var view = createOverview()
+
+    keyClick(Qt.Key_Slash)
+    findChild(view, "searchInput").text = "firefox"
+
+    verify(cardWindow(view, 2, 0).matchesSearch)
+    verify(!cardWindow(view, 2, 1).matchesSearch)
+  }
+
+  function test_emptyQueryMatchesEveryWindow() {
+    threeWorkspaces()
+    var view = createOverview()
+
+    verify(cardWindow(view, 2, 0).matchesSearch)
+    verify(cardWindow(view, 2, 1).matchesSearch)
+  }
+
+  function test_enterInSearchOpensTheFirstMatchInWorkspaceOrderAndCloses() {
+    var fixture = threeWorkspaces()
+    var view = createOverview()
+    closeSpy.target = view
+
+    keyClick(Qt.Key_Slash)
+    findChild(view, "searchInput").text = "A "
+    findChild(view, "searchInput").accepted()
+
+    // "A Terminal" is on workspace 1, "A Browser" on 2 - workspace order
+    // puts the terminal first even though both match.
+    var terminal = fixture.first.toplevels.values[0]
+    compare(Hyprland.testDispatched, [focusRequest(terminal)])
+    tryCompare(closeSpy, "count", 1)
+  }
+
+  function test_enterWithNoMatchDoesNothing() {
+    threeWorkspaces()
+    var view = createOverview()
+    closeSpy.target = view
+
+    keyClick(Qt.Key_Slash)
+    findChild(view, "searchInput").text = "nothing-open-matches-this"
+    findChild(view, "searchInput").accepted()
+
+    compare(Hyprland.testDispatched, [])
+    compare(closeSpy.count, 0)
+  }
+
+  // Escape while the field is focused only clears it and hands focus back
+  // to the grid - the field itself stays right where it was. A second
+  // Escape, now that the grid has focus again, closes the overview.
+  function test_escapeInSearchClearsItAndHandsFocusBackWithoutClosing() {
+    threeWorkspaces()
+    var view = createOverview()
+    closeSpy.target = view
+    var search = findChild(view, "searchInput")
+
+    keyClick(Qt.Key_Slash)
+    search.text = "firefox"
+
+    keyClick(Qt.Key_Escape)
+    compare(view.searchQuery, "")
+    compare(closeSpy.count, 0)
+
+    // Focus is really back on the grid, not still sitting in the search
+    // field waiting to swallow the next key as more text - an arrow key
+    // now walks the cards instead.
+    compare(view.selectedIndex, 0)
+    keyClick(Qt.Key_Right)
+    compare(view.selectedIndex, 1)
+
+    keyClick(Qt.Key_Escape)
+    tryCompare(closeSpy, "count", 1)
+  }
+
   // ---- the settings button --------------------------------------------------
 
   function test_theGearAsksForTheSettings() {
@@ -858,6 +949,61 @@ TestCase {
 
     compare(fixture.second.toplevels.values[0].wayland.testCloseCalls, 1)
     compare(fixture.second.toplevels.values[1].wayland.testCloseCalls, 1)
+    compare(Quickshell.testExecuted, [["some-tool"]])
+  }
+
+  // A close() is only a request - the setup shouldn't open onto a workspace
+  // that (as far as anyone can tell) still has the windows being replaced on
+  // it. `threeWorkspaces()` never bothers with the global toplevel list
+  // elsewhere in this file (nothing needed it to be real before), so these
+  // populate it themselves to give the wait something to actually wait on.
+  function test_replaceWaitsForTheWindowsToActuallyCloseBeforeOpening() {
+    var fixture = threeWorkspaces()
+    Hyprland.toplevels.values = fixture.second.toplevels.values
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({ setupTargetMode: "replace" }, { store: store, opener: opener })
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
+
+    compare(fixture.second.toplevels.values[0].wayland.testCloseCalls, 1)
+    compare(fixture.second.toplevels.values[1].wayland.testCloseCalls, 1)
+    // Not open yet - both windows are still there as far as Hyprland knows.
+    compare(Quickshell.testExecuted, [])
+
+    Hyprland.toplevels.testRemove(fixture.second.toplevels.values[0])
+    compare(Quickshell.testExecuted, [])
+
+    Hyprland.toplevels.testRemove(fixture.second.toplevels.values[1])
+    compare(Quickshell.testExecuted, [["some-tool"]])
+  }
+
+  // An app stuck on "save changes?" (or just slow) can't hold a setup open
+  // hostage forever - past `closeWaitMs` it opens anyway.
+  function test_replaceOpensAfterATimeoutEvenIfTheWindowsNeverClose() {
+    var fixture = threeWorkspaces()
+    Hyprland.toplevels.values = fixture.second.toplevels.values
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({ setupTargetMode: "replace" }, { store: store, opener: opener, closeWaitMs: 20 })
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
+
+    compare(Quickshell.testExecuted, [])
+    tryCompare(Quickshell, "testExecuted", [["some-tool"]])
+  }
+
+  // `add` never asks anything to close, so there is nothing to wait for -
+  // even with the same windows genuinely still sitting there.
+  function test_addModeNeverWaitsEvenWithTheSameWindowsStillThere() {
+    var fixture = threeWorkspaces()
+    Hyprland.toplevels.values = fixture.second.toplevels.values
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var opener = makeOpener()
+    var view = createOverview({}, { store: store, opener: opener })
+
+    dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
+
     compare(Quickshell.testExecuted, [["some-tool"]])
   }
 

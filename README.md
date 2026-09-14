@@ -64,6 +64,9 @@ Three ways, none of which touches your Hyprland bindings:
     [[omarchy-shell shell toggle better-workspaces '{}']])
   ```
 
+  `./install-bindings.sh` does this for you, along with the save and
+  settings bindings below - see [Install](#install).
+
 - **A touchpad gesture**, in `~/.config/hypr/input.lua` - for example a
   three-finger swipe up:
 
@@ -98,6 +101,13 @@ again, as do `Esc` and a click past the cards.
   busy workspace leaves no empty spot on its card to grab.
 - **Arrow keys or `hjkl`** walk the cards, **Enter** opens the selected one
   (or makes the new one, on `+`), **Esc** closes.
+- **The search box** sits over the cards the whole time you're there - **`/`**
+  just moves keyboard focus into it. Every window that doesn't match what
+  you type - by title or by app - dims across every workspace at once, so a
+  window you can't place by eye is still findable by name. **Enter** goes
+  straight to the first match, in workspace order; **Esc** clears it and
+  hands focus back to the cards without closing the overview (a second
+  `Esc` closes that).
 - **The gear in the top-right corner** opens the settings over the cards.
   They stay on screen, previews and all, because most of the settings change
   what the overview shows - `Esc` there goes back to them rather than closing
@@ -137,7 +147,11 @@ overview - a small icon per app plus the name.
   decides what happens: `add` (the default) opens the setup's windows
   alongside what's there; `replace` closes the existing ones first with a
   normal close request (never a kill), so an app that wants to ask "save
-  changes?" still gets to.
+  changes?" still gets to - and waits for them to actually be gone (up to a
+  few seconds) before opening the setup, so its windows don't land on a
+  workspace that still has the old ones on it too. An app that never closes
+  doesn't block it forever; the setup opens alongside it once that wait runs
+  out.
 - **The × in a chip's corner** deletes it, after asking you to confirm.
 - **The button in the chip's other corner** assigns which workspace it opens
   on at boot (see below) - a click opens a small picker of "off" plus every
@@ -169,6 +183,25 @@ poll.
 ```bash
 omarchy plugin add https://github.com/LukasTrust/betterWorkspaces.git --enable
 ```
+
+Omarchy's installer never runs plugin code or install hooks, so the three
+keybindings above aren't set up for you automatically - add them by hand as
+shown above, or run the plugin's own opt-in script once, from a checkout:
+
+```bash
+cd ~/.config/omarchy/plugins/better-workspaces  # or wherever you cloned it
+./install-bindings.sh
+```
+
+It checks each of the three candidate keys against `omarchy menu
+keybindings --print` - Omarchy's own resolved list, defaults and your
+overrides both - and only ever adds ones that are free. Anything already
+bound to something else is reported and left alone; if that's `SUPER + Q`
+specifically, the one the overview actually needs, it aborts before writing
+anything at all, rather than leaving you with only the other two. Run it
+again any time - already-installed bindings are recognised as such and
+skipped, not duplicated. It backs up `bindings.lua` with a timestamp before
+writing.
 
 ## Manual / dev install
 

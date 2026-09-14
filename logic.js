@@ -59,6 +59,17 @@ function computeWindowKey(ipcClass, ipcInitialClass, waylandAppId) {
   return key
 }
 
+// Whether a window matches an overview search query - case-insensitively,
+// against either its title or its window class. An empty/blank query
+// matches everything, so the overview's default (no query yet) never hides
+// anything.
+function matchesSearchQuery(title, windowClass, query) {
+  var q = String(query || "").trim().toLowerCase()
+  if (q.length === 0) return true
+  if (String(title || "").toLowerCase().indexOf(q) !== -1) return true
+  return String(windowClass || "").toLowerCase().indexOf(q) !== -1
+}
+
 // Turns a raw icon value (a user override or a DesktopEntry.icon) into
 // either a themed/file image source, or - if it doesn't resolve to an
 // icon-theme entry - plain text. This lets a user override with either an
@@ -710,6 +721,22 @@ function planSetupOpen(targetWindows, mode) {
   return addresses
 }
 
+// Which of the addresses a `replace` drop asked to close are still actually
+// open, checked against Hyprland's current toplevel list - the caller waits
+// on this (with a timeout, since an app can sit on a "save changes?" dialog
+// forever) before opening the setup, so its windows don't have to share the
+// workspace with the ones being replaced even for a moment.
+function remainingCloseTargets(pending, currentAddresses) {
+  var open = {}
+  var current = currentAddresses || []
+  for (var i = 0; i < current.length; i++) open[String(current[i])] = true
+  var list = pending || []
+  var remaining = []
+  for (var p = 0; p < list.length; p++)
+    if (open[String(list[p])]) remaining.push(String(list[p]))
+  return remaining
+}
+
 // Assigns (or clears, for a falsy/out-of-range workspaceId) which workspace
 // a setup opens on at boot. At most one setup per workspace: handing this
 // one a workspace another setup already had takes it away from that one,
@@ -1127,6 +1154,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     computeWorkspaceIds: computeWorkspaceIds,
     computeWindowKey: computeWindowKey,
+    matchesSearchQuery: matchesSearchQuery,
     classifyIconValue: classifyIconValue,
     lookupIconOverride: lookupIconOverride,
     steamAppId: steamAppId,
@@ -1154,6 +1182,7 @@ if (typeof module !== "undefined" && module.exports) {
     validateSetupEntry: validateSetupEntry,
     validateSetupFile: validateSetupFile,
     planSetupOpen: planSetupOpen,
+    remainingCloseTargets: remainingCloseTargets,
     assignBootWorkspace: assignBootWorkspace,
     shouldRunBoot: shouldRunBoot,
     bootEntries: bootEntries,
