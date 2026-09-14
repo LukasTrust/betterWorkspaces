@@ -5,7 +5,8 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 
-import "../js/logic.js" as Logic
+import "../js/views.js" as Views
+import "../js/settings.js" as Settings
 
 // This plugin's summonable surface. One overlay serves every view; the
 // payload picks which one:
@@ -42,10 +43,10 @@ Item {
   readonly property bool cardOpen: root.settingsOpen || root.saveOpen
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "better-workspaces"
-  readonly property var widgetSettings: Logic.widgetSettingsFrom(root.shell ? root.shell.barConfig : null, root.pluginId)
+  readonly property var widgetSettings: Settings.widgetSettingsFrom(root.shell ? root.shell.barConfig : null, root.pluginId)
 
   function open(payloadJson) {
-    var state = Logic.overlayState(payloadJson)
+    var state = Views.overlayState(payloadJson)
     root.view = state.base
     root.settingsOpen = state.settingsOpen
     root.saveOpen = state.saveOpen
@@ -60,7 +61,7 @@ Item {
   // Escape, and a click past the card. From a card reached through the
   // overview it is a step back; anywhere else it is the way out.
   function stepBack() {
-    if (Logic.overlayEscape(root.view, root.cardOpen) === "back") {
+    if (Views.overlayEscape(root.view, root.cardOpen) === "back") {
       root.settingsOpen = false
       root.saveOpen = false
       root.saveWorkspaceId = 0

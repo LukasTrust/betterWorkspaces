@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-import "../js/logic.js" as Logic
+import "../js/setups.js" as Setups
 
 // Reads and writes this plugin's saved setups:
 // `~/.config/omarchy/better-workspaces/setups.json`. One shared store, so
@@ -11,7 +11,7 @@ import "../js/logic.js" as Logic
 //
 // The file is hand-editable, so a load never throws - `setups` just comes
 // back as `{}` for a missing, corrupt or outdated file, same as
-// `Logic.validateSetupFile` on its own. A write is atomic (`atomicWrites` on
+// `Setups.validateSetupFile` on its own. A write is atomic (`atomicWrites` on
 // the FileView: a temp file, then a rename, so a crash mid-write can't leave
 // a half-written file behind) and narrowed to the owner only - both the file
 // and the directory holding it, on every write rather than only at creation
@@ -25,7 +25,7 @@ Item {
   readonly property string configDir: String(Quickshell.env("HOME") || "") + "/.config/omarchy/better-workspaces"
   readonly property string filePath: root.configDir + "/setups.json"
 
-  readonly property var setups: Logic.validateSetupFile(file.text())
+  readonly property var setups: Setups.validateSetupFile(file.text())
 
   // Fires once a save or delete's write has actually landed (after the
   // permissions are set), so a caller like the save dialog knows it is safe
@@ -101,7 +101,7 @@ Item {
 
   function _write(nextSetups) {
     root._pendingWrite = JSON.stringify({
-      schemaVersion: Logic.SETUP_SCHEMA_VERSION,
+      schemaVersion: Setups.SETUP_SCHEMA_VERSION,
       setups: nextSetups
     })
     mkdirProcess.running = true

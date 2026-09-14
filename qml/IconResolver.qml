@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-import "../js/logic.js" as Logic
+import "../js/icons.js" as Icons
 
 // Turns a Hyprland window into the icon to draw for it, and remembers the
 // answer per window class. Both views need this - the bar widget for its
@@ -53,7 +53,7 @@ Item {
     if (!toplevel)
       return ""
     var ipc = toplevel.lastIpcObject || {}
-    return Logic.computeWindowKey(ipc.class, ipc.initialClass, toplevel.wayland ? toplevel.wayland.appId : "")
+    return Icons.computeWindowKey(ipc.class, ipc.initialClass, toplevel.wayland ? toplevel.wayland.appId : "")
   }
 
   // Turns a raw icon value (a user override or a DesktopEntry.icon) into
@@ -61,7 +61,7 @@ Item {
   // icon-theme entry - plain text. This lets a user override with either an
   // icon-theme name or a literal glyph/emoji in shell.json.
   function classifyIconValue(value) {
-    return Logic.classifyIconValue(value, function (name) {
+    return Icons.classifyIconValue(value, function (name) {
       return Quickshell.iconPath(name, true)
     })
   }
@@ -70,7 +70,7 @@ Item {
   //   { "id": "better-workspaces", "icons": { "firefox": "󰍬" } }
   function userIconOverride(key) {
     var overrides = root.settings ? root.settings.icons : null
-    return Logic.lookupIconOverride(overrides, key)
+    return Icons.lookupIconOverride(overrides, key)
   }
 
   readonly property var fallbackIcon: ({
@@ -85,7 +85,7 @@ Item {
   // class isn't a Steam window or the icon isn't installed, so the caller
   // falls through to the desktop-entry lookup instead of showing a raw name.
   function steamIcon(key) {
-    var appId = Logic.steamAppId(key)
+    var appId = Icons.steamAppId(key)
     if (!appId)
       return null
     var themed = Quickshell.iconPath("steam_icon_" + appId, true)

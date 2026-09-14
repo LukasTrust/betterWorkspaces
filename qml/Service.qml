@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 
-import "../js/logic.js" as Logic
+import "../js/setups.js" as Setups
 
 // Runs once when the shell starts: opens whichever saved setups are
 // assigned a boot workspace (the "Beim Start öffnen" section of
@@ -57,7 +57,7 @@ Item {
   // `/proc/<pid>/cmdline` reader: `blockLoading`/`blockAllReads` are both
   // required for a first access to actually return what's on disk instead
   // of an empty string. A missing file (first boot ever) reads as "" too,
-  // which `Logic.shouldRunBoot` already treats as "not this session yet".
+  // which `Setups.shouldRunBoot` already treats as "not this session yet".
   FileView {
     id: guardFile
     objectName: "guardFile"
@@ -129,10 +129,10 @@ Item {
   }
 
   function runBoot() {
-    if (!Logic.shouldRunBoot(guardFile.text(), root.signature))
+    if (!Setups.shouldRunBoot(guardFile.text(), root.signature))
       return
     mkdirProcess.running = true
-    root._queue = Logic.bootEntries(setupStore.setups)
+    root._queue = Setups.bootEntries(setupStore.setups)
     root._queueIndex = 0
     if (root._queue.length > 0)
       root._openNext()

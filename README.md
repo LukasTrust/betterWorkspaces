@@ -349,18 +349,41 @@ which is as long as it has windows or you are on it. With `hideEmpty` on,
 windows in them, plus the one you are on - so the strip grows and shrinks as
 you work.
 
+## The code
+
+QML holds everything that needs a live Quickshell, Hyprland or a window;
+`js/` holds the pure decisions, so they run under plain Node in the tests
+with no compositor at all. Each file stands alone and a QML file imports
+the ones it needs:
+
+| File | What it decides |
+|------|-----------------|
+| `js/settings.js` | The shell.json settings - ranges, fallbacks, what a hand-edited value is pulled to - and the workspace strip they decide |
+| `js/icons.js` | What a window is, which icon stands for it, and the overview's search |
+| `js/selector.js` | How a Hyprland dispatch names one particular window |
+| `js/cards.js` | The overview's card layout, navigation, and reorder drags |
+| `js/views.js` | Which view the overlay shows, and what Escape does there |
+| `js/setups.js` | The setups.json contract: validation, naming, capturing, boot |
+| `js/splits.js` | Working a dwindle split tree back out of saved rectangles |
+
+None of them imports another. A QML JavaScript resource can only import one
+with `.import`, which plain Node can't parse - so the choice is between
+these files being importable from QML and being testable under Node, and
+they are testable. That is also why the two three-line helpers `own` and
+`isPlainObject` appear in more than one file.
+
 ## Testing
 
 Three levels, from fast and isolated to real:
 
 ```bash
-npm test            # logic.js unit tests + coverage gate, stand-in API check
+npm test            # js/ unit tests + coverage gate, stand-in API check
 npm run test:qml    # widget behaviour, headless, against stand-in modules
 npm run test:e2e    # real windows on your live Hyprland session
 ```
 
-- **`npm test`** runs the pure logic in `logic.js` under plain Node, with a
-  coverage gate. It also checks that every member of the QML test
+- **`npm test`** runs the pure logic in `js/` under plain Node, with a
+  coverage gate per file. It also checks that every member of the QML test
   stand-ins exists on the real Quickshell/Omarchy type, so a QML test can't
   pass against an API that doesn't exist (skipped where Quickshell isn't
   installed, e.g. in CI).

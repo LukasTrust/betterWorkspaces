@@ -111,7 +111,7 @@ TestCase {
     compare(Quickshell.testExecuted, [["some-tool", "--flag"]])
   }
 
-  // logic.js's `captureSetupWindows` always stores the desktop entry's own
+  // setups.js's `captureSetupWindows` always stores the desktop entry's own
   // `id` field as the recipe, and `DesktopEntries.byId` looks entries up by
   // that same id - not by window class - so a recipe naming an id the
   // installed-app list still has resolves straight through.

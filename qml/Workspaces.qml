@@ -7,7 +7,9 @@ import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
 
-import "../js/logic.js" as Logic
+import "../js/selector.js" as Selector
+import "../js/icons.js" as Icons
+import "../js/settings.js" as Settings
 
 // Drop-in replacement for omarchy.workspaces that also shows a small icon
 // for every window open on each workspace - "what's actually in there" at
@@ -31,7 +33,7 @@ BarWidget {
     return null
   }
 
-  // What Hyprland currently has, in the shape logic.js works on. Reading
+  // What Hyprland currently has, in the shape settings.js works on. Reading
   // each workspace's windows here is what lets `hideEmpty` follow windows
   // opening and closing without any polling: the binding below depends on
   // everything this touches and re-runs when any of it changes.
@@ -50,7 +52,7 @@ BarWidget {
     return model
   }
 
-  readonly property var candidateWorkspaceIds: Logic.computeWorkspaceIds(root.workspaceModel(), {
+  readonly property var candidateWorkspaceIds: Settings.computeWorkspaceIds(root.workspaceModel(), {
     minWorkspaces: root.minWorkspaces,
     hideEmpty: root.hideEmpty,
     focusedId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0
@@ -63,7 +65,7 @@ BarWidget {
   property var workspaceIds: []
 
   onCandidateWorkspaceIdsChanged: {
-    if (!Logic.sameIds(root.candidateWorkspaceIds, root.workspaceIds))
+    if (!Settings.sameIds(root.candidateWorkspaceIds, root.workspaceIds))
       root.workspaceIds = root.candidateWorkspaceIds
   }
 
@@ -116,14 +118,14 @@ BarWidget {
   // Omarchy configures Hyprland in Lua, where a dispatch is evaluated as
   // Lua, so this is the `hl.dsp` form: the classic `focuswindow address:...`
   // selector is a syntax error there rather than a focus. The selector comes
-  // from logic.js, because Quickshell reports an address without the `0x`
+  // from selector.js, because Quickshell reports an address without the `0x`
   // Hyprland wants and one missing it matches nothing while still saying
   // "ok". The wlr request is the fallback for a toplevel with no address.
   function activateWindow(toplevel) {
     if (!toplevel)
       return
     if (root.bar && toplevel.address) {
-      root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ window = \"" + Logic.windowSelector(toplevel.address) + "\" })"))
+      root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ window = \"" + Selector.windowSelector(toplevel.address) + "\" })"))
       return
     }
     if (toplevel.wayland && typeof toplevel.wayland.activate === "function")
@@ -165,16 +167,16 @@ BarWidget {
 
   // ---- settings -----------------------------------------------------------
   //
-  // Ranges and fallbacks live in logic.js (SETTING_FIELDS), so the edit view
+  // Ranges and fallbacks live in settings.js (SETTING_FIELDS), so the edit view
   // and this clamping can't drift apart.
 
-  readonly property int maxIcons: Logic.clampSetting("maxIcons", setting("maxIcons", null))
-  readonly property int iconSize: Logic.clampSetting("iconSize", setting("iconSize", null))
-  readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", setting("minWorkspaces", null))
-  readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", setting("hideEmpty", null))
-  readonly property bool groupApps: Logic.clampSetting("groupApps", setting("groupApps", null))
-  readonly property bool gameIcons: Logic.clampSetting("gameIcons", setting("gameIcons", null))
-  readonly property bool overviewEnabled: Logic.clampSetting("overviewEnabled", setting("overviewEnabled", null))
+  readonly property int maxIcons: Settings.clampSetting("maxIcons", setting("maxIcons", null))
+  readonly property int iconSize: Settings.clampSetting("iconSize", setting("iconSize", null))
+  readonly property int minWorkspaces: Settings.clampSetting("minWorkspaces", setting("minWorkspaces", null))
+  readonly property bool hideEmpty: Settings.clampSetting("hideEmpty", setting("hideEmpty", null))
+  readonly property bool groupApps: Settings.clampSetting("groupApps", setting("groupApps", null))
+  readonly property bool gameIcons: Settings.clampSetting("gameIcons", setting("gameIcons", null))
+  readonly property bool overviewEnabled: Settings.clampSetting("overviewEnabled", setting("overviewEnabled", null))
 
   // ---- icon resolution ----------------------------------------------------
   //
@@ -294,7 +296,7 @@ BarWidget {
         // One entry per icon shown: a group of same-app windows with
         // `groupApps` on, otherwise every window as its own single-window
         // group - so maxIcons/overflow always count icons, not raw windows.
-        readonly property var iconGroups: root.groupApps ? Logic.groupToplevels(toplevels, root.windowKey) : toplevels.map(function (toplevel) {
+        readonly property var iconGroups: root.groupApps ? Icons.groupToplevels(toplevels, root.windowKey) : toplevels.map(function (toplevel) {
           return {
             key: root.windowKey(toplevel),
             toplevels: [toplevel]

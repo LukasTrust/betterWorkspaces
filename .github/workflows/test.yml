@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      # Unit tests plus the coverage gate on logic.js. The stub-vs-real-API
+      # Unit tests plus the coverage gate on everything in js/. The stub-vs-real-API
       # checks in test/stub-api.test.js skip here: they need a local
       # Quickshell and Omarchy install.
       - run: npm test

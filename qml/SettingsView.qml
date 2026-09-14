@@ -3,7 +3,8 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
-import "../js/logic.js" as Logic
+import "../js/settings.js" as Settings
+import "../js/setups.js" as Setups
 
 // The plugin's own settings form, shown by Overlay.qml. Every change is
 // written straight back to this widget's shell.json entry, so the bar
@@ -36,7 +37,7 @@ Item {
   implicitHeight: layout.implicitHeight
 
   function valueOf(key) {
-    return Logic.settingValue(root.settings, key)
+    return Settings.settingValue(root.settings, key)
   }
 
   // ---- renaming a setup -----------------------------------------------------
@@ -52,7 +53,7 @@ Item {
     root.renameErrorFor = ""
   }
 
-  // `Logic.renameSetup` refuses rather than resolves a collision - taking a
+  // `Setups.renameSetup` refuses rather than resolves a collision - taking a
   // name another setup holds would otherwise drop that setup silently. It
   // says no by returning null; which no it was comes from `setupNameStatus`,
   // the same check the save dialog reports with.
@@ -66,10 +67,10 @@ Item {
       return
     }
 
-    var next = Logic.renameSetup(root.store.setups, from, trimmed)
+    var next = Setups.renameSetup(root.store.setups, from, trimmed)
     if (next === null) {
       root.renameErrorFor = from
-      root.renameError = Logic.setupNameStatus(trimmed, root.setupNames) === "empty" ? "A setup needs a name." : "“" + trimmed + "” is already taken."
+      root.renameError = Setups.setupNameStatus(trimmed, root.setupNames) === "empty" ? "A setup needs a name." : "“" + trimmed + "” is already taken."
       return
     }
 
@@ -78,7 +79,7 @@ Item {
   }
 
   function change(key, value) {
-    var next = Logic.applySetting(root.settings, key, value)
+    var next = Settings.applySetting(root.settings, key, value)
     root.settings = next
     if (root.shell && typeof root.shell.updateEntryInline === "function")
       root.shell.updateEntryInline(root.pluginId, next)
@@ -95,7 +96,7 @@ Item {
 
     Repeater {
       objectName: "fieldRepeater"
-      model: Logic.SETTING_FIELDS
+      model: Settings.SETTING_FIELDS
 
       RowLayout {
         id: row
@@ -282,7 +283,7 @@ Item {
               foreground: Color.menu.text
               Layout.preferredWidth: Style.spacing.numberFieldWidth
               onModified: function (value) {
-                root.store.replaceAll(Logic.assignBootWorkspace(root.store.setups, setupRow.modelData, value))
+                root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, setupRow.modelData, value))
               }
             }
           }

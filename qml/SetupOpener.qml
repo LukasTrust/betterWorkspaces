@@ -2,9 +2,10 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 
-import "../js/logic.js" as Logic
+import "../js/selector.js" as Selector
+import "../js/splits.js" as Splits
 
-// Opens a saved setup: walks the plan `Logic.planOpenSetup` already worked
+// Opens a saved setup: walks the plan `Splits.planOpenSetup` already worked
 // out, one window at a time. Splitting only ever divides whichever single
 // window is currently focused, so a step has to actually be open before the
 // next one's preselect means anything - there is no way to fire all the
@@ -76,7 +77,7 @@ Item {
   function open(setup, targetArea) {
     if (root.running)
       return
-    var plan = Logic.planOpenSetup(setup, targetArea)
+    var plan = Splits.planOpenSetup(setup, targetArea)
     root._plan = plan
     root._stepIndex = 0
     root._addressByIndex = ({})
@@ -99,7 +100,7 @@ Item {
     if (op.preselect !== null && op.focusIndex !== null) {
       var address = root._addressByIndex[op.focusIndex]
       if (address)
-        root.dispatch("hl.dsp.focus({ window = \"" + Logic.windowSelector(address) + "\" })")
+        root.dispatch("hl.dsp.focus({ window = \"" + Selector.windowSelector(address) + "\" })")
       root.dispatch("hl.dsp.layout(\"preselect " + (op.preselect === "right" ? "r" : "d") + "\")")
     }
     stepTimer.restart()

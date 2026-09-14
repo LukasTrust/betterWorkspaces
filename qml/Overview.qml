@@ -5,7 +5,11 @@ import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
 
-import "../js/logic.js" as Logic
+import "../js/selector.js" as Selector
+import "../js/icons.js" as Icons
+import "../js/cards.js" as Cards
+import "../js/settings.js" as Settings
+import "../js/setups.js" as Setups
 
 // The overview: every workspace as a card, laid out to fill the screen, with
 // its windows drawn where they really sit. That is the whole view - the cards
@@ -49,11 +53,11 @@ Item {
   // or a drop actually asked for.
   signal dispatched(string request)
 
-  readonly property int minWorkspaces: Logic.clampSetting("minWorkspaces", Logic.settingValue(root.settings, "minWorkspaces"))
-  readonly property bool hideEmpty: Logic.clampSetting("hideEmpty", Logic.settingValue(root.settings, "hideEmpty"))
-  readonly property bool gameIcons: Logic.clampSetting("gameIcons", Logic.settingValue(root.settings, "gameIcons"))
-  readonly property string setupTargetMode: Logic.clampSetting("setupTargetMode", Logic.settingValue(root.settings, "setupTargetMode"))
-  readonly property bool focusAfterSetupDrop: Logic.clampSetting("focusAfterSetupDrop", Logic.settingValue(root.settings, "focusAfterSetupDrop"))
+  readonly property int minWorkspaces: Settings.clampSetting("minWorkspaces", Settings.settingValue(root.settings, "minWorkspaces"))
+  readonly property bool hideEmpty: Settings.clampSetting("hideEmpty", Settings.settingValue(root.settings, "hideEmpty"))
+  readonly property bool gameIcons: Settings.clampSetting("gameIcons", Settings.settingValue(root.settings, "gameIcons"))
+  readonly property string setupTargetMode: Settings.clampSetting("setupTargetMode", Settings.settingValue(root.settings, "setupTargetMode"))
+  readonly property bool focusAfterSetupDrop: Settings.clampSetting("focusAfterSetupDrop", Settings.settingValue(root.settings, "focusAfterSetupDrop"))
 
   // ---- saved setups ---------------------------------------------------------
 
@@ -75,10 +79,10 @@ Item {
   }
 
   // Which of a workspace's current windows `setupTargetMode: "replace"`
-  // closes, worked out by `Logic.planSetupOpen` - a plain `close()` each,
+  // closes, worked out by `Setups.planSetupOpen` - a plain `close()` each,
   // never a kill, same as the bar and this view's own middle-click.
   function closeExisting(targets, mode) {
-    var addresses = Logic.planSetupOpen(targets, mode)
+    var addresses = Setups.planSetupOpen(targets, mode)
     for (var i = 0; i < targets.length; i++)
       if (addresses.indexOf(String(targets[i].address)) !== -1)
         root.closeWindow(targets[i])
@@ -106,7 +110,7 @@ Item {
   }
 
   function waitForClose(addresses, callback) {
-    var pending = Logic.remainingCloseTargets(addresses, root.currentToplevelAddresses())
+    var pending = Setups.remainingCloseTargets(addresses, root.currentToplevelAddresses())
     if (pending.length === 0) {
       callback()
       return
@@ -119,7 +123,7 @@ Item {
   function _checkPendingClose() {
     if (!root._pendingCloseCallback)
       return
-    root._pendingCloseAddresses = Logic.remainingCloseTargets(root._pendingCloseAddresses, root.currentToplevelAddresses())
+    root._pendingCloseAddresses = Setups.remainingCloseTargets(root._pendingCloseAddresses, root.currentToplevelAddresses())
     if (root._pendingCloseAddresses.length === 0)
       root._settlePendingClose()
   }
@@ -226,7 +230,7 @@ Item {
 
   function setBootWorkspace(name, workspaceId) {
     if (root.store)
-      root.store.replaceAll(Logic.assignBootWorkspace(root.store.setups, name, workspaceId))
+      root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, name, workspaceId))
     root.bootPopoverFor = ""
   }
 
@@ -261,14 +265,14 @@ Item {
         occupied: workspace.toplevels.values.length > 0
       })
     }
-    return Logic.computeWorkspaceIds(model, {
+    return Settings.computeWorkspaceIds(model, {
       minWorkspaces: root.minWorkspaces,
       hideEmpty: root.hideEmpty,
       focusedId: root.focusedId
     })
   }
 
-  readonly property int newWorkspaceId: Logic.nextWorkspaceId(root.workspaceIds)
+  readonly property int newWorkspaceId: Cards.nextWorkspaceId(root.workspaceIds)
 
   // Geometry to measure window positions against. A workspace carries its
   // own monitor; the focused one stands in for a workspace Hyprland hasn't
@@ -320,7 +324,7 @@ Item {
   // Omarchy configures Hyprland in Lua, and a dispatch request is evaluated
   // as Lua, so the classic `movetoworkspacesilent 3,address:0x...` form is a
   // syntax error rather than a move. `window = "address:0x..."` is what picks
-  // out a window other than the focused one; logic.js builds that selector,
+  // out a window other than the focused one; selector.js builds that selector,
   // because the `0x` Quickshell leaves off is the difference between moving
   // the window and Hyprland answering "ok" and doing nothing.
 
@@ -337,7 +341,7 @@ Item {
   }
 
   function moveWindowRequest(address, id) {
-    return "hl.dsp.window.move({ workspace = \"" + id + "\", window = \"" + Logic.windowSelector(address) + "\", follow = false })"
+    return "hl.dsp.window.move({ workspace = \"" + id + "\", window = \"" + Selector.windowSelector(address) + "\", follow = false })"
   }
 
   // Hyprland's own focus dispatcher, not the foreign-toplevel activate
@@ -351,7 +355,7 @@ Item {
     if (!toplevel)
       return
     if (toplevel.address) {
-      root.dispatch("hl.dsp.focus({ window = \"" + Logic.windowSelector(toplevel.address) + "\" })")
+      root.dispatch("hl.dsp.focus({ window = \"" + Selector.windowSelector(toplevel.address) + "\" })")
       return
     }
     if (toplevel.wayland && typeof toplevel.wayland.activate === "function")
@@ -388,7 +392,7 @@ Item {
   }
 
   // Hyprland can't renumber a workspace, so a card dragged onto another one
-  // moves the windows instead; logic.js works out which window ends up where
+  // moves the windows instead; cards.js works out which window ends up where
   // before any of them moves.
   function reorderWorkspaces(fromIndex, toIndex) {
     var cards = []
@@ -404,7 +408,7 @@ Item {
       })
     }
 
-    var moves = Logic.planReorder(cards, fromIndex, toIndex)
+    var moves = Cards.planReorder(cards, fromIndex, toIndex)
     for (var m = 0; m < moves.length; m++)
       root.dispatch(root.moveWindowRequest(moves[m].address, moves[m].workspace))
     if (moves.length > 0)
@@ -514,10 +518,10 @@ Item {
     return sizes
   }
 
-  // The grid maths lives in logic.js: it fits any number of rectangles of any
+  // The grid maths lives in cards.js: it fits any number of rectangles of any
   // shape into the space without overlapping them and without distorting
   // them, which is exactly what a screen full of workspace cards needs.
-  readonly property var layout: Logic.spreadLayout(root.cellSizes, {
+  readonly property var layout: Cards.spreadLayout(root.cellSizes, {
     width: Math.max(0, root.width - root.gap * 2),
     height: Math.max(0, root.height - root.gap * 2 - root.setupsStripHeight)
   }, {
@@ -556,7 +560,7 @@ Item {
   }
 
   function moveSelection(direction) {
-    root.selectedIndex = Logic.navigateGrid(root.selectedIndex, root.cellCount, root.layout.columns, direction)
+    root.selectedIndex = Cards.navigateGrid(root.selectedIndex, root.cellCount, root.layout.columns, direction)
   }
 
   // One notch of the wheel, as a named step rather than only a handler body.
@@ -570,7 +574,7 @@ Item {
   function scrollSelection(angleDelta) {
     if (root.suspended)
       return
-    root.selectedIndex = Logic.navigateWheel(root.selectedIndex, root.cellCount, angleDelta)
+    root.selectedIndex = Cards.navigateWheel(root.selectedIndex, root.cellCount, angleDelta)
   }
 
   function openSelection() {
@@ -617,7 +621,7 @@ Item {
   }
 
   function windowMatchesSearch(toplevel) {
-    return Logic.matchesSearchQuery(root.windowTitle(toplevel), root.windowClass(toplevel), root.searchQuery)
+    return Icons.matchesSearchQuery(root.windowTitle(toplevel), root.windowClass(toplevel), root.searchQuery)
   }
 
   // The first match, in the same order the cards are laid out in, so Enter
@@ -963,7 +967,7 @@ Item {
                 objectName: "cardWindow"
                 required property var modelData
 
-                readonly property var rect: Logic.cardWindowRect(root.windowRect(windowSlot.modelData), card.monitor, {
+                readonly property var rect: Cards.cardWindowRect(root.windowRect(windowSlot.modelData), card.monitor, {
                   width: cardSurface.width,
                   height: cardSurface.height
                 })

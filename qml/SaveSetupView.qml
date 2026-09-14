@@ -6,7 +6,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-import "../js/logic.js" as Logic
+import "../js/icons.js" as Icons
+import "../js/cards.js" as Cards
+import "../js/settings.js" as Settings
+import "../js/setups.js" as Setups
 
 // The save dialog, shown by Overlay.qml over a workspace's own save button.
 // Windowless, like Overview.qml and SettingsView.qml, so it can be driven
@@ -25,7 +28,7 @@ Item {
   // since the one clicked isn't necessarily the one you're on.
   property int workspaceId: 0
 
-  readonly property bool gameIcons: Logic.clampSetting("gameIcons", Logic.settingValue(root.settings, "gameIcons"))
+  readonly property bool gameIcons: Settings.clampSetting("gameIcons", Settings.settingValue(root.settings, "gameIcons"))
 
   implicitWidth: layout.implicitWidth
   implicitHeight: layout.implicitHeight
@@ -106,7 +109,7 @@ Item {
     if (!(numeric > 0))
       return null
     cmdlineReader.path = "/proc/" + numeric + "/cmdline"
-    var argv = Logic.parseProcCmdline(cmdlineReader.text())
+    var argv = Setups.parseProcCmdline(cmdlineReader.text())
     return argv.length > 0 ? argv : null
   }
 
@@ -123,7 +126,7 @@ Item {
     for (var i = 0; i < list.length; i++) {
       var toplevel = list[i]
       var ipc = toplevel.lastIpcObject || {}
-      var key = Logic.computeWindowKey(ipc.class, ipc.initialClass, toplevel.wayland ? toplevel.wayland.appId : "")
+      var key = Icons.computeWindowKey(ipc.class, ipc.initialClass, toplevel.wayland ? toplevel.wayland.appId : "")
       var desktopEntryId = root.desktopEntryIdFor(key)
       items.push({
         class: key,
@@ -144,7 +147,7 @@ Item {
   property var capturedWindows: []
 
   function refreshCapture() {
-    root.capturedWindows = Logic.captureSetupWindows(root.captureItems())
+    root.capturedWindows = Setups.captureSetupWindows(root.captureItems())
   }
 
   readonly property bool empty: root.capturedWindows.length === 0
@@ -220,7 +223,7 @@ Item {
     if (root.empty)
       return
     var trimmed = String(nameField.text || "").trim()
-    var status = Logic.setupNameStatus(trimmed, root.existingNames)
+    var status = Setups.setupNameStatus(trimmed, root.existingNames)
     if (status === "empty") {
       root.triedEmptySubmit = true
       return
@@ -298,7 +301,7 @@ Item {
               objectName: "previewWindow"
               required property var modelData
 
-              readonly property var rect: Logic.cardWindowRect(root.windowRectOf(previewSlot.modelData), root.monitorArea, {
+              readonly property var rect: Cards.cardWindowRect(root.windowRectOf(previewSlot.modelData), root.monitorArea, {
                 width: previewCard.width,
                 height: previewCard.height
               })

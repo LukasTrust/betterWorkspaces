@@ -19,7 +19,7 @@ const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const path = require("node:path")
 
-const { SETTING_DEFAULTS, SETTING_FIELDS } = require("../js/logic.js")
+const { SETTING_DEFAULTS, SETTING_FIELDS } = require("../js/settings.js")
 
 const root = path.join(__dirname, "..")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"))
@@ -83,7 +83,7 @@ test("every schema field carries the same type, range, label and default as the 
 // A default that the widget would immediately clamp away would make the
 // form's own starting value a lie.
 test("every schema default is a value the widget accepts unchanged", () => {
-  const { clampSetting } = require("../js/logic.js")
+  const { clampSetting } = require("../js/settings.js")
   for (const entry of barWidget.schema ?? []) {
     assert.equal(clampSetting(entry.key, entry.defaultValue), entry.defaultValue, `${entry.key} default`)
   }
