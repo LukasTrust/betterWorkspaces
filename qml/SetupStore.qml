@@ -13,9 +13,11 @@ import "../js/logic.js" as Logic
 // back as `{}` for a missing, corrupt or outdated file, same as
 // `Logic.validateSetupFile` on its own. A write is atomic (`atomicWrites` on
 // the FileView: a temp file, then a rename, so a crash mid-write can't leave
-// a half-written file behind) and narrowed to the owner only, right after -
-// a saved setup can carry a command line, and a command line can carry
-// tokens or other arguments a user wouldn't want group- or world-readable.
+// a half-written file behind) and narrowed to the owner only - both the file
+// and the directory holding it, on every write rather than only at creation
+// (see `dirModeProcess`) - because a saved setup can carry a command line,
+// and a command line can carry tokens or other arguments a user wouldn't
+// want group- or world-readable.
 Item {
   id: root
   visible: false
@@ -52,9 +54,32 @@ Item {
     objectName: "mkdirProcess"
     command: ["mkdir", "-p", "-m", "0700", root.configDir]
     onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        root._pendingWrite = null
+        root.saveFailed()
+        return
+      }
+      dirModeProcess.running = true
+    }
+  }
+
+  // `mkdir -m` only sets the mode on a directory it actually creates, so a
+  // directory that already existed keeps whatever mode it had - an older
+  // version of this plugin, or a hand-created one, can leave it group- and
+  // world-readable for good. That matters here and not just cosmetically:
+  // `atomicWrites` lands the temp file at the umask default (usually 0644)
+  // and only then is it narrowed to 0600, so the directory's own mode is
+  // what keeps anyone else out in between. Setting it unconditionally is
+  // the only way to make that true for a directory this didn't create.
+  Process {
+    id: dirModeProcess
+    objectName: "dirModeProcess"
+    command: ["chmod", "0700", root.configDir]
+    onExited: function (exitCode) {
       if (exitCode !== 0 || root._pendingWrite === null) {
         root._pendingWrite = null
-        if (exitCode !== 0) root.saveFailed()
+        if (exitCode !== 0)
+          root.saveFailed()
         return
       }
       file.setText(root._pendingWrite)
@@ -67,13 +92,18 @@ Item {
     objectName: "chmodProcess"
     command: ["chmod", "0600", root.filePath]
     onExited: function (exitCode) {
-      if (exitCode === 0) root.committed()
-      else root.saveFailed()
+      if (exitCode === 0)
+        root.committed()
+      else
+        root.saveFailed()
     }
   }
 
   function _write(nextSetups) {
-    root._pendingWrite = JSON.stringify({ schemaVersion: Logic.SETUP_SCHEMA_VERSION, setups: nextSetups })
+    root._pendingWrite = JSON.stringify({
+      schemaVersion: Logic.SETUP_SCHEMA_VERSION,
+      setups: nextSetups
+    })
     mkdirProcess.running = true
   }
 
@@ -82,7 +112,8 @@ Item {
   // rewriting all of them.
   function save(name, entry) {
     var next = {}
-    for (var key in root.setups) next[key] = root.setups[key]
+    for (var key in root.setups)
+      next[key] = root.setups[key]
     next[String(name)] = entry
     root._write(next)
   }
@@ -90,7 +121,8 @@ Item {
   function remove(name) {
     var next = {}
     for (var key in root.setups)
-      if (key !== String(name)) next[key] = root.setups[key]
+      if (key !== String(name))
+        next[key] = root.setups[key]
     root._write(next)
   }
 

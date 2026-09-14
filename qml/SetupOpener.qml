@@ -56,7 +56,8 @@ Item {
   // Either way, nothing runs through a shell: `execute()` is Quickshell's
   // own launcher, and a bare argv goes straight to `execDetached`.
   function launch(recipe) {
-    if (!recipe) return
+    if (!recipe)
+      return
     if (recipe.type === "desktop-entry") {
       var entry = DesktopEntries.byId(recipe.id)
       if (entry && typeof entry.execute === "function") {
@@ -73,7 +74,8 @@ Item {
   // already running - one restore at a time, since steps share the single
   // "currently focused window" preselect splits off of.
   function open(setup, targetArea) {
-    if (root.running) return
+    if (root.running)
+      return
     var plan = Logic.planOpenSetup(setup, targetArea)
     root._plan = plan
     root._stepIndex = 0
@@ -112,7 +114,8 @@ Item {
   Connections {
     target: Hyprland.toplevels
     function onObjectInsertedPost(object, index) {
-      if (!root.running || !stepTimer.running) return
+      if (!root.running || !stepTimer.running)
+        return
       stepTimer.stop()
       var op = root._plan[root._stepIndex]
       root._addressByIndex[op.index] = object.address

@@ -8,7 +8,8 @@ import Quickshell
 // overview's wallpaper source are built with them.
 QtObject {
   function fileUrl(path) {
-    if (!path) return ""
+    if (!path)
+      return ""
     return "file://" + String(path).split("/").map(encodeURIComponent).join("/")
   }
 

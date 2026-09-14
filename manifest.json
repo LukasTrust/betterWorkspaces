@@ -33,6 +33,90 @@
       "overviewEnabled": true,
       "setupTargetMode": "add",
       "focusAfterSetupDrop": true
-    }
+    },
+    "schema": [
+      {
+        "key": "maxIcons",
+        "type": "integer",
+        "label": "Icons per workspace",
+        "description": "How many window icons to show before the rest are counted as +N.",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "defaultValue": 5
+      },
+      {
+        "key": "iconSize",
+        "type": "integer",
+        "label": "Icon size",
+        "description": "Size of each window icon, in pixels.",
+        "min": 8,
+        "max": 32,
+        "step": 1,
+        "defaultValue": 14
+      },
+      {
+        "key": "minWorkspaces",
+        "type": "integer",
+        "label": "Workspaces always shown",
+        "description": "Workspaces shown even while they are empty, counted from 1. Ignored while empty workspaces are hidden.",
+        "min": 0,
+        "max": 10,
+        "step": 1,
+        "defaultValue": 5
+      },
+      {
+        "key": "hideEmpty",
+        "type": "boolean",
+        "label": "Hide empty workspaces",
+        "description": "Show only workspaces that have windows in them, plus the one you are on.",
+        "defaultValue": false
+      },
+      {
+        "key": "groupApps",
+        "type": "boolean",
+        "label": "Group windows by app",
+        "description": "Show one icon per app, with a count badge once it has 2 or more windows, instead of one icon per window.",
+        "defaultValue": false
+      },
+      {
+        "key": "gameIcons",
+        "type": "boolean",
+        "label": "Game icons",
+        "description": "Show a game's own icon for Proton-run games that are in your Steam library, including ones launched from Heroic or similar. Native Linux game binaries aren't covered. Resolved once per window class and cached, same as every other icon; turn off to skip that extra lookup entirely.",
+        "defaultValue": true
+      },
+      {
+        "key": "overviewEnabled",
+        "type": "boolean",
+        "label": "Workspace overview",
+        "description": "Clicking the workspace you are already on, or the key you bound, opens an overview of every workspace, window and saved setup. Off, a click only ever switches workspace.",
+        "defaultValue": true
+      },
+      {
+        "key": "setupTargetMode",
+        "type": "enum",
+        "label": "Opening a setup on an occupied workspace",
+        "description": "\"Add\" opens the setup's windows alongside what's already there. \"Replace\" closes the existing windows first - a normal close request, never a kill, so an app that wants to ask \"save changes?\" still gets to.",
+        "options": [
+          {
+            "value": "add",
+            "label": "Add"
+          },
+          {
+            "value": "replace",
+            "label": "Replace"
+          }
+        ],
+        "defaultValue": "add"
+      },
+      {
+        "key": "focusAfterSetupDrop",
+        "type": "boolean",
+        "label": "Focus after dropping a setup",
+        "description": "Switch to the workspace a setup was dropped on and close the overview. Off, the focus stays where it was and the overview stays open.",
+        "defaultValue": true
+      }
+    ]
   }
 }

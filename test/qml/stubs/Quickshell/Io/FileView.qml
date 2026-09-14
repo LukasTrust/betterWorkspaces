@@ -34,7 +34,8 @@ QtObject {
     // SetupStore's `setups`) stuck on a stale value forever.
     var content = String(value)
     var next = {}
-    for (var key in root.testFiles) next[key] = root.testFiles[key]
+    for (var key in root.testFiles)
+      next[key] = root.testFiles[key]
     next[root.path] = content
     root.testFiles = next
     root.testWrites = root.testWrites.concat([content])
@@ -44,7 +45,8 @@ QtObject {
   function testSetContent(content, path) {
     var target = path === undefined ? root.path : path
     var next = {}
-    for (var key in root.testFiles) next[key] = root.testFiles[key]
+    for (var key in root.testFiles)
+      next[key] = root.testFiles[key]
     next[target] = String(content)
     root.testFiles = next
   }
@@ -52,7 +54,9 @@ QtObject {
   function testSetMissing(path) {
     var target = path === undefined ? root.path : path
     var next = {}
-    for (var key in root.testFiles) if (key !== target) next[key] = root.testFiles[key]
+    for (var key in root.testFiles)
+      if (key !== target)
+        next[key] = root.testFiles[key]
     root.testFiles = next
   }
 

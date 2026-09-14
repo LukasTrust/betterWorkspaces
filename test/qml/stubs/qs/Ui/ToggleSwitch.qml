@@ -12,7 +12,7 @@ Item {
   property color foreground: "#ffffff"
   property color accent: "#88aaff"
 
-  signal toggled()
+  signal toggled
   signal hovered(bool isHovered)
 
   implicitWidth: 40

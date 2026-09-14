@@ -59,7 +59,9 @@ Item {
 
   readonly property var setupNames: {
     var names = []
-    if (root.store) for (var key in root.store.setups) names.push(key)
+    if (root.store)
+      for (var key in root.store.setups)
+        names.push(key)
     return names.sort()
   }
 
@@ -127,12 +129,15 @@ Item {
     var callback = root._pendingCloseCallback
     root._pendingCloseCallback = null
     root._pendingCloseAddresses = []
-    if (callback) callback()
+    if (callback)
+      callback()
   }
 
   Connections {
     target: Hyprland.toplevels
-    function onObjectRemovedPost() { root._checkPendingClose() }
+    function onObjectRemovedPost() {
+      root._checkPendingClose()
+    }
   }
 
   Timer {
@@ -157,7 +162,6 @@ Item {
     var setup = root.store.setups[name]
     if (!setup)
       return
-
     var targets = root.toplevelsOf(workspaceId)
     var closeAddresses = root.setupTargetMode === "replace" ? root.closeExisting(targets, root.setupTargetMode) : []
 
@@ -276,7 +280,12 @@ Item {
 
   function monitorRect(monitor) {
     if (!monitor)
-      return { x: 0, y: 0, width: root.width, height: root.height }
+      return {
+        x: 0,
+        y: 0,
+        width: root.width,
+        height: root.height
+      }
     return {
       x: monitor.x,
       y: monitor.y,
@@ -389,7 +398,10 @@ Item {
       for (var w = 0; w < toplevels.length; w++)
         if (toplevels[w].address)
           addresses.push(String(toplevels[w].address))
-      cards.push({ id: root.workspaceIds[i], addresses: addresses })
+      cards.push({
+        id: root.workspaceIds[i],
+        addresses: addresses
+      })
     }
 
     var moves = Logic.planReorder(cards, fromIndex, toIndex)
@@ -474,10 +486,12 @@ Item {
 
   readonly property int gap: Style.space(24)
   readonly property int captionHeight: Style.space(30)
-  // Room for a row of setup chips along the bottom - nothing reserved when
-  // there aren't any, so the workspace cards use the full screen exactly as
-  // before until something is actually saved.
-  readonly property int setupsStripHeight: root.setupNames.length > 0 ? Style.space(96) : 0
+  // Room for a row of setup chips along the bottom. With nothing saved yet
+  // the strip collapses to a single line of text saying how to get one -
+  // without it the whole feature is invisible until you happen to find the
+  // save button on a card, and there is no other place that would mention
+  // it.
+  readonly property int setupsStripHeight: root.setupNames.length > 0 ? Style.space(96) : Style.space(26)
 
   // One cell per workspace plus one for the "+" card. A card is the shape of
   // the screen its workspace is on, so the windows drawn on it are the shape
@@ -487,10 +501,16 @@ Item {
     var sizes = []
     for (var i = 0; i < root.workspaceIds.length; i++) {
       var monitor = root.monitorRect(root.monitorFor(root.workspaceIds[i]))
-      sizes.push({ width: monitor.width, height: monitor.height })
+      sizes.push({
+        width: monitor.width,
+        height: monitor.height
+      })
     }
     var focused = root.monitorRect(Hyprland.focusedMonitor)
-    sizes.push({ width: focused.width, height: focused.height })
+    sizes.push({
+      width: focused.width,
+      height: focused.height
+    })
     return sizes
   }
 
@@ -537,6 +557,20 @@ Item {
 
   function moveSelection(direction) {
     root.selectedIndex = Logic.navigateGrid(root.selectedIndex, root.cellCount, root.layout.columns, direction)
+  }
+
+  // One notch of the wheel, as a named step rather than only a handler body.
+  //
+  // Two reasons it is broken out: the suspend guard belongs with the action
+  // itself rather than only on the FocusScope that happens to carry the
+  // handler, and the QML tests can drive this directly - synthetic wheel
+  // events reach the wrong window when qmltestrunner runs every test file in
+  // one process, so the handler below can be checked for being wired up but
+  // not actually fired.
+  function scrollSelection(angleDelta) {
+    if (root.suspended)
+      return
+    root.selectedIndex = Logic.navigateWheel(root.selectedIndex, root.cellCount, angleDelta)
   }
 
   function openSelection() {
@@ -608,17 +642,35 @@ Item {
 
   readonly property var settingsIcon: {
     var themed = Quickshell.iconPath("preferences-system", true)
-    return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\u2699" }
+    return themed.length > 0 ? {
+      kind: "image",
+      source: themed
+    } : {
+      kind: "text",
+      value: "\u2699"
+    }
   }
 
   readonly property var saveIcon: {
     var themed = Quickshell.iconPath("document-save", true)
-    return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\ud83d\udcbe" }
+    return themed.length > 0 ? {
+      kind: "image",
+      source: themed
+    } : {
+      kind: "text",
+      value: "\ud83d\udcbe"
+    }
   }
 
   readonly property var bootIcon: {
     var themed = Quickshell.iconPath("system-run", true)
-    return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\ud83d\ude80" }
+    return themed.length > 0 ? {
+      kind: "image",
+      source: themed
+    } : {
+      kind: "text",
+      value: "\ud83d\ude80"
+    }
   }
 
   // Omarchy keeps a symlink pointing at the background in use; following it
@@ -662,6 +714,21 @@ Item {
       if (direction.length > 0) {
         root.moveSelection(direction)
         event.accepted = true
+      }
+    }
+
+    // The wheel walks the cards, one per notch - the pointer's version of the
+    // arrow keys, for when the hand is already on the mouse.
+    //
+    // Only here, and deliberately not on the bar widget: a stray notch over
+    // the bar would switch workspace outright, which is a far bigger surprise
+    // than moving a selection you can still see before pressing Enter. For
+    // the same reason this moves the selection rather than switching: the
+    // overview's own model is "pick, then open".
+    WheelHandler {
+      objectName: "selectionWheelHandler"
+      onWheel: function (event) {
+        root.scrollSelection(event.angleDelta.y)
       }
     }
 
@@ -873,7 +940,6 @@ Item {
               onPressed: root.selectedIndex = card.index
               onClicked: root.openWorkspace(card.modelData)
             }
-
           }
 
           // The windows sit in their own layer over the card rather than
@@ -1226,6 +1292,32 @@ Item {
       onClicked: root.bootPopoverFor = ""
     }
 
+    // What the strip says before there is anything in it. Points at the one
+    // control that fills it, rather than describing setups in the abstract.
+    Text {
+      objectName: "setupsEmptyHint"
+      visible: root.setupNames.length === 0
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.margins: root.gap
+      horizontalAlignment: Text.AlignHCenter
+      elide: Text.ElideRight
+      textFormat: Text.PlainText
+      text: "Save a workspace with the button in a card's top-left corner, and it turns up here to reopen later."
+      color: Color.menu.text
+      opacity: root.closing || !root.active ? 0 : 0.6
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+
+      Behavior on opacity {
+        NumberAnimation {
+          duration: root.animationDuration
+          easing.type: Easing.OutCubic
+        }
+      }
+    }
+
     // A row of saved setups along the bottom, each draggable onto a
     // workspace card or "+". Only takes screen space once something is
     // actually saved.
@@ -1239,9 +1331,38 @@ Item {
       anchors.margins: root.gap
       height: root.setupsStripHeight
 
+      readonly property int chipSpacing: Style.space(10)
+
+      // Chips divide up the room the strip has rather than each insisting on
+      // the same fixed width. At a fixed width the strip simply runs past the
+      // screen edge once there are more than about a dozen setups, and the
+      // ones out there can't be clicked or dragged at all - they aren't on
+      // screen. Sharing the width keeps every setup reachable.
+      //
+      // A Flickable would be the other way to do this, but not here: the boot
+      // picker opens *above* the strip and a chip being dragged leaves it
+      // entirely, so the clipping a Flickable needs would cut off both.
+      //
+      // The floor is where a name stops being readable; past that many setups
+      // the strip does overflow again. That is a far higher ceiling than
+      // before rather than no ceiling at all.
+      readonly property int chipWidth: {
+        var count = root.setupNames.length
+        if (count <= 0)
+          return Style.space(150)
+        var available = setupsStrip.width - setupsStrip.chipSpacing * (count - 1)
+        return Math.max(Style.space(72), Math.min(Style.space(150), Math.floor(available / count)))
+      }
+
+      // The app icons are the first thing to go when chips get tight: the
+      // name is what tells two setups apart, the icons only hint at what is
+      // in one. Dropping them keeps the name legible instead of squeezing
+      // both into a chip too narrow for either.
+      readonly property bool chipsShowIcons: setupsStrip.chipWidth >= Style.space(110)
+
       Row {
         anchors.fill: parent
-        spacing: Style.space(10)
+        spacing: setupsStrip.chipSpacing
 
         Repeater {
           id: setupChipRepeater
@@ -1253,7 +1374,7 @@ Item {
             objectName: "setupChipSlot-" + chipSlot.modelData
             required property string modelData
 
-            width: Style.space(150)
+            width: setupsStrip.chipWidth
             height: setupsStrip.height
 
             readonly property var setupEntry: root.store ? root.store.setups[chipSlot.modelData] : null
@@ -1314,10 +1435,11 @@ Item {
                   Row {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: Style.space(3)
+                    visible: setupsStrip.chipsShowIcons
 
                     Repeater {
                       objectName: "setupChipIconRepeater"
-                      model: chipSlot.setupWindowClasses
+                      model: setupsStrip.chipsShowIcons ? chipSlot.setupWindowClasses : []
 
                       Item {
                         id: iconSlot

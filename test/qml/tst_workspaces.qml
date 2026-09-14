@@ -154,10 +154,26 @@ TestCase {
 
   function test_showsAsManyEmptyWorkspacesAsMinWorkspaces_data() {
     return [
-      { tag: "none", minWorkspaces: 0, expected: [7] },
-      { tag: "one", minWorkspaces: 1, expected: [1, 7] },
-      { tag: "all ten", minWorkspaces: 10, expected: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
-      { tag: "unusable", minWorkspaces: "abc", expected: [1, 2, 3, 4, 5, 7] }
+      {
+        tag: "none",
+        minWorkspaces: 0,
+        expected: [7]
+      },
+      {
+        tag: "one",
+        minWorkspaces: 1,
+        expected: [1, 7]
+      },
+      {
+        tag: "all ten",
+        minWorkspaces: 10,
+        expected: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      },
+      {
+        tag: "unusable",
+        minWorkspaces: "abc",
+        expected: [1, 2, 3, 4, 5, 7]
+      }
     ]
   }
 
@@ -295,10 +311,12 @@ TestCase {
     var widget = createWidget()
 
     mouseClick(cellFor(widget, 3))
-    compare(fakeShell.testToggled, [{
-      id: "better-workspaces",
-      payload: "{}"
-    }])
+    compare(fakeShell.testToggled, [
+      {
+        id: "better-workspaces",
+        payload: "{}"
+      }
+    ])
     compare(fakeBar.testCommands, [])
   }
 
@@ -354,11 +372,13 @@ TestCase {
     var slot = iconSlot(widget, 1, 0)
 
     mouseMove(slot, slot.width / 2, slot.height / 2)
-    compare(fakeBar.testTooltipLog, [{
-      action: "show",
-      target: slot,
-      text: "My Terminal"
-    }])
+    compare(fakeBar.testTooltipLog, [
+      {
+        action: "show",
+        target: slot,
+        text: "My Terminal"
+      }
+    ])
 
     mouseMove(widget, -10, -10)
     compare(fakeBar.testTooltipLog[1], {

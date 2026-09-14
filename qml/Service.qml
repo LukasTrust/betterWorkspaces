@@ -76,14 +76,16 @@ Item {
     objectName: "mkdirProcess"
     command: ["mkdir", "-p", root.runtimeDir]
     onExited: function (exitCode) {
-      if (exitCode === 0) guardFile.setText(root.signature)
+      if (exitCode === 0)
+        guardFile.setText(root.signature)
     }
   }
 
   function monitorFor(workspaceId) {
     var values = Hyprland.workspaces.values
     for (var i = 0; i < values.length; i++)
-      if (values[i].id === workspaceId) return values[i].monitor
+      if (values[i].id === workspaceId)
+        return values[i].monitor
     // The workspace doesn't exist yet - boot is the one time there is no
     // "workspace you were already on" to fall back to either, so the
     // focused monitor (whichever Hyprland put the cursor on at startup) is
@@ -93,12 +95,24 @@ Item {
   }
 
   function monitorArea(monitor) {
-    if (!monitor) return { x: 0, y: 0, width: 0, height: 0 }
-    return { x: monitor.x, y: monitor.y, width: monitor.width, height: monitor.height }
+    if (!monitor)
+      return {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      }
+    return {
+      x: monitor.x,
+      y: monitor.y,
+      width: monitor.width,
+      height: monitor.height
+    }
   }
 
   function _openNext() {
-    if (root._queueIndex >= root._queue.length) return
+    if (root._queueIndex >= root._queue.length)
+      return
     var entry = root._queue[root._queueIndex]
     root._queueIndex++
     var setup = setupStore.setups[entry.name]
@@ -115,11 +129,13 @@ Item {
   }
 
   function runBoot() {
-    if (!Logic.shouldRunBoot(guardFile.text(), root.signature)) return
+    if (!Logic.shouldRunBoot(guardFile.text(), root.signature))
+      return
     mkdirProcess.running = true
     root._queue = Logic.bootEntries(setupStore.setups)
     root._queueIndex = 0
-    if (root._queue.length > 0) root._openNext()
+    if (root._queue.length > 0)
+      root._openNext()
   }
 
   // Hyprland can still be discovering monitors in the moment the shell
@@ -138,8 +154,12 @@ Item {
 
   Connections {
     target: Hyprland.monitors
-    function onObjectInsertedPost() { settleTimer.restart() }
-    function onObjectRemovedPost() { settleTimer.restart() }
+    function onObjectInsertedPost() {
+      settleTimer.restart()
+    }
+    function onObjectRemovedPost() {
+      settleTimer.restart()
+    }
   }
 
   Component.onCompleted: settleTimer.restart()

@@ -12,8 +12,8 @@ Item {
   property string confirmText: "Confirm"
   property int selectedIndex: 1
 
-  signal canceled()
-  signal confirmed()
+  signal canceled
+  signal confirmed
 
   visible: root.opened
 

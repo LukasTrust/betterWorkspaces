@@ -49,7 +49,7 @@ nothing else to page through. A card is the shape of the screen its workspace
 is on, and every window carries its app icon in the corner, so a black
 terminal is still obviously a terminal.
 
-<img src="screenshot-overview.png" alt="Better Workspaces overview" width="700">
+<img src="screenshots/screenshot-overview.png" alt="Better Workspaces overview" width="700">
 
 ### Opening it
 
@@ -66,7 +66,7 @@ Three ways, none of which touches your Hyprland bindings:
     [[omarchy-shell shell toggle better-workspaces '{}']])
   ```
 
-  `./install-bindings.sh` does this for you, along with the save and
+  `./scripts/install-bindings.sh` does this for you, along with the save and
   settings bindings below - see [Install](#install).
 
 - **A touchpad gesture**, in `~/.config/hypr/input.lua` - for example a
@@ -103,6 +103,11 @@ again, as do `Esc` and a click past the cards.
   busy workspace leaves no empty spot on its card to grab.
 - **Arrow keys or `hjkl`** walk the cards, **Enter** opens the selected one
   (or makes the new one, on `+`), **Esc** closes.
+- **The scroll wheel** walks them too, one card per notch, in the order they
+  are laid out. It moves the selection rather than switching workspace, the
+  same as the arrow keys - the overview's own way round is "pick, then open".
+  The bar widget deliberately doesn't do this: a stray notch there would
+  switch workspace outright.
 - **The search box** sits over the cards the whole time you're there - **`/`**
   just moves keyboard focus into it. Every window that doesn't match what
   you type - by title or by app - dims across every workspace at once, so a
@@ -161,6 +166,13 @@ overview - a small icon per app plus the name.
   button itself shows that workspace's number, or a themed icon (with a
   glyph fallback) while it's off.
 
+**Updating one** with whatever is open now: the save dialog lists every setup
+you already have under the name field. Picking one fills its name in rather
+than making you retype it exactly, and then stops at the same "press Enter
+again to overwrite" confirmation a name you typed yourself would get.
+
+**Renaming one** is in the settings (see [The edit view](#the-edit-view)).
+
 Reopening a setup replays each window's own launch recipe (its installed
 app, or the exact command line if it isn't one) and rebuilds the left/right,
 top/bottom split it was saved with. Sizes land on Hyprland's own default
@@ -192,7 +204,7 @@ shown above, or run the plugin's own opt-in script once, from a checkout:
 
 ```bash
 cd ~/.config/omarchy/plugins/better-workspaces  # or wherever you cloned it
-./install-bindings.sh
+./scripts/install-bindings.sh
 ```
 
 It checks each of the three candidate keys against `omarchy menu
@@ -203,7 +215,10 @@ specifically, the one the overview actually needs, it aborts before writing
 anything at all, rather than leaving you with only the other two. Run it
 again any time - already-installed bindings are recognised as such and
 skipped, not duplicated. It backs up `bindings.lua` with a timestamp before
-writing.
+writing. A key that's bound to something carrying no description of its own
+counts as taken like any other, rather than as free.
+
+`./scripts/uninstall-bindings.sh` takes them back out again - see [Remove](#remove).
 
 ## Manual / dev install
 
@@ -226,15 +241,41 @@ omarchy plugin disable better-workspaces   # keep it installed, just hide it
 omarchy plugin remove better-workspaces    # uninstall entirely
 ```
 
-Removing it restores the stock `omarchy.workspaces` widget; no other files or
-settings are left behind beyond this widget's entry in `shell.json`.
+Removing it restores the stock `omarchy.workspaces` widget and drops this
+widget's entry from `shell.json`. Two things it wrote outside its own
+directory outlive it, because `omarchy plugin remove` only ever touches the
+plugin directory and `shell.json`:
+
+- **Saved setups**, in `~/.config/omarchy/better-workspaces/`. Kept on
+  purpose - reinstalling picks them straight back up, and a setup is work you
+  did rather than something the plugin generated.
+- **Keybindings**, if you ran `./scripts/install-bindings.sh`. Left behind they point
+  at a command that no longer answers.
+
+The install script's own counterpart clears both:
+
+```bash
+./scripts/uninstall-bindings.sh            # remove the keybindings it added
+./scripts/uninstall-bindings.sh --purge    # and delete the saved setups too
+```
+
+It only removes bindings that script wrote, recognised by the marker comment
+it leaves behind, and backs up `bindings.lua` with a timestamp first. A
+binding you added by hand is reported and left alone - there's no marker to
+tell it apart from any other line you wrote yourself. Run it before or after
+`omarchy plugin remove`; the order doesn't matter.
 
 ## Configuration
 
 ### The edit view
 
-Every setting except the per-app `icons` overrides has a small editor of its
-own. The gear in the overview's top-right corner opens it, or bind it to a
+Every setting except the per-app `icons` overrides is also in Omarchy's own
+**Setup > Plugins** form, alongside every other widget's. This view is the
+richer one - it applies as you type and carries the per-setup rows below -
+but the Setup menu is where you'd look first, so both are there. They write
+the same `shell.json` keys, so neither can disagree with the other.
+
+The gear in the overview's top-right corner opens this view, or bind it to a
 key of its own in `~/.config/hypr/bindings.lua`:
 
 ```lua
@@ -246,18 +287,24 @@ Changes apply as you make them and are written back to your `shell.json`
 entry. Values outside the allowed range are pulled to the nearest one, and
 anything unusable falls back to the default.
 
-<img src="screenshot-settings.png" alt="Better Workspaces settings" width="500">
+<img src="screenshots/screenshot-settings.png" alt="Better Workspaces settings" width="500">
 
 `Esc`, or a click outside the card, closes the editor - or, when you got
 there through the overview's gear, steps back to the overview so you can see
 what your change did.
 
-Below the settings, once you've saved at least one setup, is a field per
-setup for which workspace it should open on at boot (`0` for none) - the same
-assignment each setup's own chip in the overview lets you make directly (see
-above), just listed all in one place here. Giving one a workspace another
-setup already had takes it away from that one - only one setup can claim a
-given workspace.
+Below the settings, once you've saved at least one setup, is a row per setup:
+its name, and which workspace it should open on at boot (`0` for none).
+
+**Rename** a setup by typing over its name and pressing Enter. Everything it
+holds - its windows, its boot workspace - comes along. A blank name, or one
+another setup is already using, is refused and says so rather than going
+ahead: taking a name in use would drop the setup that had it.
+
+The boot number is the same assignment each setup's own chip in the overview
+lets you make directly (see above), just listed all in one place here. Giving
+one a workspace another setup already had takes it away from that one - only
+one setup can claim a given workspace.
 
 Any setup with a boot workspace assigned opens automatically once, the first
 time Hyprland starts - after waiting for every monitor to be detected, so a

@@ -271,7 +271,10 @@ BarWidget {
     anchors.fill: parent
     anchors.rightMargin: root.trailingGap
     columns: root.vertical ? 1 : Math.max(1, root.workspaceIds.length)
-    columnSpacing: root.vertical ? 0 : Style.space(2)
+    // Matches the stock omarchy.workspaces spacing exactly - this widget sits
+    // in the same bar, often right next to it, and a different gap between
+    // workspace cells reads as a misalignment rather than a choice.
+    columnSpacing: root.vertical ? 0 : Style.space(1)
     rowSpacing: root.vertical ? Style.space(2) : 0
 
     Repeater {
@@ -458,8 +461,12 @@ BarWidget {
                   spacing: iconSlot.grouped ? Style.space(3) : 0
 
                   Item {
-                    width: root.iconSize
-                    height: root.iconSize
+                    // Implicit, not plain width/height: a RowLayout sets its
+                    // children's size itself, so a literal width here is the
+                    // layout's to overwrite (Qt calls that undefined
+                    // behaviour) rather than a size it will honour.
+                    implicitWidth: root.iconSize
+                    implicitHeight: root.iconSize
 
                     IconImage {
                       objectName: "iconImage"
@@ -510,8 +517,10 @@ BarWidget {
                   hoverEnabled: true
                   acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                   cursorShape: Qt.PointingHandCursor
-                  onEntered: if (root.bar) root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
-                  onExited: if (root.bar) root.bar.hideTooltip(iconSlot)
+                  onEntered: if (root.bar)
+                    root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
+                  onExited: if (root.bar)
+                    root.bar.hideTooltip(iconSlot)
                   onClicked: function (mouse) {
                     if (mouse.button === Qt.MiddleButton) {
                       root.closeWindow(iconSlot.representativeToplevel)

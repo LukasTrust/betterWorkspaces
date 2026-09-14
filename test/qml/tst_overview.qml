@@ -56,7 +56,10 @@ TestCase {
 
   Component {
     id: openerComponent
-    Plugin.SetupOpener { timeoutMs: 30; settleMs: 1 }
+    Plugin.SetupOpener {
+      timeoutMs: 30
+      settleMs: 1
+    }
   }
 
   SignalSpy {
@@ -134,15 +137,17 @@ TestCase {
     Hyprland.monitors.values = [monitor]
 
     var first = makeWorkspace(1, [makeWindow("foot", "A Terminal", [0, 0], [1920, 1080])], monitor)
-    var second = makeWorkspace(2, [
-      makeWindow("firefox", "A Browser", [0, 0], [960, 1080]),
-      makeWindow("code", "An Editor", [960, 0], [960, 1080])
-    ], monitor)
+    var second = makeWorkspace(2, [makeWindow("firefox", "A Browser", [0, 0], [960, 1080]), makeWindow("code", "An Editor", [960, 0], [960, 1080])], monitor)
     var third = makeWorkspace(3, [], monitor)
 
     Hyprland.workspaces.values = [first, second, third]
     Hyprland.focusedWorkspace = second
-    return { monitor: monitor, first: first, second: second, third: third }
+    return {
+      monitor: monitor,
+      first: first,
+      second: second,
+      third: third
+    }
   }
 
   function makeStore(setups) {
@@ -160,13 +165,23 @@ TestCase {
 
   function anArgvSetup(argv, windowClass) {
     return {
-      windows: [{
-        recipe: { type: "argv", argv: argv },
-        class: windowClass || "x",
-        floating: false,
-        fullscreen: false,
-        rect: { x: 0, y: 0, width: 1, height: 1 }
-      }]
+      windows: [
+        {
+          recipe: {
+            type: "argv",
+            argv: argv
+          },
+          class: windowClass || "x",
+          floating: false,
+          fullscreen: false,
+          rect: {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1
+          }
+        }
+      ]
     }
   }
 
@@ -179,7 +194,8 @@ TestCase {
       active: true
     }
     var overrides = extra || {}
-    for (var key in overrides) props[key] = overrides[key]
+    for (var key in overrides)
+      props[key] = overrides[key]
     var view = createTemporaryObject(overviewComponent, testCase, props)
     verify(view !== null, "overview should be created")
     // The opening animation is running; wait it out so positions are final.
@@ -290,8 +306,7 @@ TestCase {
       for (var b = a + 1; b < cells.length; b++) {
         var one = cells[a]
         var two = cells[b]
-        var apart = one.x + one.width <= two.x + 1 || two.x + two.width <= one.x + 1
-          || one.y + one.height <= two.y + 1 || two.y + two.height <= one.y + 1
+        var apart = one.x + one.width <= two.x + 1 || two.x + two.width <= one.x + 1 || one.y + one.height <= two.y + 1 || two.y + two.height <= one.y + 1
         verify(apart, "cells " + a + " and " + b + " overlap")
       }
     }
@@ -608,6 +623,85 @@ TestCase {
     tryCompare(closeSpy, "count", 1)
   }
 
+  // The wheel is the pointer's version of the arrow keys - one card per
+  // notch, in card order, stopping at the ends.
+  //
+  // Driven through `scrollSelection` rather than `mouseWheel`: a synthetic
+  // wheel event lands in the wrong window once qmltestrunner has every test
+  // file open in one process (it works when this file runs on its own, which
+  // is exactly the kind of pass that would lie in CI). The handler's own
+  // wiring is checked separately below.
+  function test_theWheelWalksTheCardsOneAtATime() {
+    threeWorkspaces()
+    var view = createOverview()
+    compare(view.selectedIndex, 0)
+
+    view.scrollSelection(-120)
+    compare(view.selectedIndex, 1)
+    view.scrollSelection(-120)
+    compare(view.selectedIndex, 2)
+    view.scrollSelection(120)
+    compare(view.selectedIndex, 1)
+  }
+
+  function test_theWheelStopsAtTheEndsRatherThanWrapping() {
+    threeWorkspaces()
+    var view = createOverview()
+
+    view.scrollSelection(120)
+    compare(view.selectedIndex, 0)
+
+    view.selectedIndex = view.cellCount - 1
+    view.scrollSelection(-120)
+    compare(view.selectedIndex, view.cellCount - 1)
+  }
+
+  // Same switch that stops the arrow keys while the settings card is up: the
+  // cards stay on screen but take no input.
+  function test_theWheelDoesNothingWhileSuspended() {
+    threeWorkspaces()
+    var view = createOverview()
+    view.suspended = true
+
+    view.scrollSelection(-120)
+    compare(view.selectedIndex, 0)
+  }
+
+  // Before anything is saved there is no strip, and nothing else in the
+  // overview mentions setups - so the space it would take says how to get
+  // one instead.
+  function test_saysHowToSaveASetupWhileThereAreNone() {
+    threeWorkspaces()
+    var view = createOverview()
+
+    var hint = findChild(view, "setupsEmptyHint")
+    verify(hint.visible)
+    verify(!findChild(view, "setupsStrip").visible)
+  }
+
+  function test_theEmptyHintGivesWayToTheStripOnceOneIsSaved() {
+    threeWorkspaces()
+    var view = createOverview({}, {
+      store: makeStore({
+        Work: anArgvSetup(["foot"])
+      })
+    })
+
+    verify(!findChild(view, "setupsEmptyHint").visible)
+    verify(findChild(view, "setupsStrip").visible)
+  }
+
+  // The handler is what connects a real wheel to `scrollSelection`, and the
+  // tests above deliberately bypass it - so at least check it is there, on
+  // the scope that stops taking input while the settings card is up.
+  function test_theWheelHandlerIsWiredToTheCards() {
+    threeWorkspaces()
+    var view = createOverview()
+    var handler = findChild(view, "selectionWheelHandler")
+    verify(handler !== null, "the overview should carry a wheel handler")
+    compare(handler.parent, findChild(view, "overviewKeys"))
+  }
+
   function test_arrowsAndHjklWalkTheCardsAndEnterOpensOne() {
     threeWorkspaces()
     var view = createOverview()
@@ -873,8 +967,13 @@ TestCase {
 
   function test_showsOneChipPerSavedSetupSortedByName() {
     threeWorkspaces()
-    var store = makeStore({ Zeta: anArgvSetup(["z"]), Alpha: anArgvSetup(["a"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Zeta: anArgvSetup(["z"]),
+      Alpha: anArgvSetup(["a"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     verify(findChild(view, "setupsStrip").visible)
     compare(findChild(view, "setupChipRepeater").count, 2)
@@ -883,10 +982,16 @@ TestCase {
   }
 
   function test_clickingAChipOpensItOnTheWorkspaceActiveWhenOverviewOpened() {
-    threeWorkspaces() // focused workspace is 2
-    var store = makeStore({ Work: anArgvSetup(["some-tool", "--flag"]) })
+    threeWorkspaces()
+    // focused workspace is 2
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool", "--flag"])
+    })
     var opener = makeOpener()
-    var view = createOverview({}, { store: store, opener: opener })
+    var view = createOverview({}, {
+      store: store,
+      opener: opener
+    })
     closeSpy.target = view
 
     mouseClick(chipFor(view, "Work"))
@@ -899,9 +1004,14 @@ TestCase {
 
   function test_draggingAChipOntoACardOpensItThere() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({}, { store: store, opener: opener })
+    var view = createOverview({}, {
+      store: store,
+      opener: opener
+    })
     closeSpy.target = view
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
@@ -914,9 +1024,14 @@ TestCase {
 
   function test_draggingAChipOntoPlusOpensOnANewWorkspace() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({}, { store: store, opener: opener })
+    var view = createOverview({}, {
+      store: store,
+      opener: opener
+    })
     compare(view.newWorkspaceId, 6)
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), findChild(view, "addWorkspaceCard"))
@@ -928,10 +1043,16 @@ TestCase {
   // The default: dropping a setup onto an occupied workspace adds its
   // windows alongside the existing ones, closing nothing.
   function test_addModeDropsAlongsideExistingWindowsByDefault() {
-    var fixture = threeWorkspaces() // workspace 2 already has two windows
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var fixture = threeWorkspaces()
+    // workspace 2 already has two windows
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({}, { store: store, opener: opener })
+    var view = createOverview({}, {
+      store: store,
+      opener: opener
+    })
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
 
@@ -941,9 +1062,16 @@ TestCase {
 
   function test_replaceModeClosesTheExistingWindowsFirst() {
     var fixture = threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({ setupTargetMode: "replace" }, { store: store, opener: opener })
+    var view = createOverview({
+      setupTargetMode: "replace"
+    }, {
+      store: store,
+      opener: opener
+    })
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
 
@@ -960,9 +1088,16 @@ TestCase {
   function test_replaceWaitsForTheWindowsToActuallyCloseBeforeOpening() {
     var fixture = threeWorkspaces()
     Hyprland.toplevels.values = fixture.second.toplevels.values
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({ setupTargetMode: "replace" }, { store: store, opener: opener })
+    var view = createOverview({
+      setupTargetMode: "replace"
+    }, {
+      store: store,
+      opener: opener
+    })
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
 
@@ -983,9 +1118,17 @@ TestCase {
   function test_replaceOpensAfterATimeoutEvenIfTheWindowsNeverClose() {
     var fixture = threeWorkspaces()
     Hyprland.toplevels.values = fixture.second.toplevels.values
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({ setupTargetMode: "replace" }, { store: store, opener: opener, closeWaitMs: 20 })
+    var view = createOverview({
+      setupTargetMode: "replace"
+    }, {
+      store: store,
+      opener: opener,
+      closeWaitMs: 20
+    })
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
 
@@ -998,9 +1141,14 @@ TestCase {
   function test_addModeNeverWaitsEvenWithTheSameWindowsStillThere() {
     var fixture = threeWorkspaces()
     Hyprland.toplevels.values = fixture.second.toplevels.values
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({}, { store: store, opener: opener })
+    var view = createOverview({}, {
+      store: store,
+      opener: opener
+    })
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 2))
 
@@ -1012,10 +1160,18 @@ TestCase {
   // means the focus jumps back once the setup has finished opening, not
   // that it never moves at all.
   function test_focusAfterSetupDropFalseJumpsBackOnceItFinishesOpening() {
-    var fixture = threeWorkspaces() // focused workspace is 2
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var fixture = threeWorkspaces()
+    // focused workspace is 2
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
     var opener = makeOpener()
-    var view = createOverview({ focusAfterSetupDrop: false }, { store: store, opener: opener })
+    var view = createOverview({
+      focusAfterSetupDrop: false
+    }, {
+      store: store,
+      opener: opener
+    })
     closeSpy.target = view
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
@@ -1029,22 +1185,25 @@ TestCase {
 
     // The launched window appears - the plan (one window, no preselect)
     // finishes, and only now does the jump back happen.
-    var launched = createTemporaryObject(toplevelComponent, testCase, { address: "deadbeef" })
+    var launched = createTemporaryObject(toplevelComponent, testCase, {
+      address: "deadbeef"
+    })
     Hyprland.toplevels.testInsert(launched)
 
     // `finished` only fires after the opener's settle pause past the last
     // (only) window - see `settleMs` on SetupOpener.
-    tryCompare(Hyprland, "testDispatched", [
-      "hl.dsp.focus({ workspace = \"3\" })",
-      "hl.dsp.focus({ workspace = \"2\" })"
-    ])
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"3\" })", "hl.dsp.focus({ workspace = \"2\" })"])
     compare(closeSpy.count, 0)
   }
 
   function test_deletingASetupAsksForConfirmationFirst() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     mouseClick(findChild(chipFor(view, "Work"), "setupDeleteMouseArea"))
 
@@ -1054,8 +1213,12 @@ TestCase {
 
   function test_confirmingDeleteRemovesTheSetup() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     mouseClick(findChild(chipFor(view, "Work"), "setupDeleteMouseArea"))
     mouseClick(findChild(findChild(view, "deleteConfirmDialog"), "confirmButton"))
@@ -1066,8 +1229,12 @@ TestCase {
 
   function test_cancelingDeleteKeepsTheSetup() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     mouseClick(findChild(chipFor(view, "Work"), "setupDeleteMouseArea"))
     mouseClick(findChild(findChild(view, "deleteConfirmDialog"), "cancelButton"))
@@ -1080,8 +1247,12 @@ TestCase {
 
   function test_bootButtonFallsBackToARocketCharacterWhileOff() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     var chip = chipFor(view, "Work")
     verify(findChild(chip, "bootGlyph").visible)
@@ -1096,8 +1267,12 @@ TestCase {
       "system-run": "image://test/system-run"
     }
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     var chip = chipFor(view, "Work")
     verify(findChild(chip, "bootIcon").visible)
@@ -1109,8 +1284,15 @@ TestCase {
   // button follows the same convention rather than showing the raw id.
   function test_bootButtonShowsTheAssignedWorkspaceNumber() {
     threeWorkspaces()
-    var store = makeStore({ Work: { windows: anArgvSetup(["some-tool"]).windows, bootWorkspace: 10 } })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: {
+        windows: anArgvSetup(["some-tool"]).windows,
+        bootWorkspace: 10
+      }
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     var chip = chipFor(view, "Work")
     verify(findChild(chip, "bootNumber").visible)
@@ -1121,8 +1303,12 @@ TestCase {
 
   function test_clickingTheBootButtonOpensAPickerWithOffAndEveryWorkspace() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
     var chip = chipFor(view, "Work")
 
     verify(!findChild(chip, "setupBootPopover").visible)
@@ -1133,8 +1319,12 @@ TestCase {
 
   function test_pickingAWorkspaceAssignsBootAndClosesThePicker() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
     var chip = chipFor(view, "Work")
 
     mouseClick(findChild(chip, "setupBootMouseArea"))
@@ -1146,8 +1336,15 @@ TestCase {
 
   function test_pickingOffClearsAnExistingBootAssignment() {
     threeWorkspaces()
-    var store = makeStore({ Work: { windows: anArgvSetup(["some-tool"]).windows, bootWorkspace: 4 } })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: {
+        windows: anArgvSetup(["some-tool"]).windows,
+        bootWorkspace: 4
+      }
+    })
+    var view = createOverview({}, {
+      store: store
+    })
     var chip = chipFor(view, "Work")
 
     mouseClick(findChild(chip, "setupBootMouseArea"))
@@ -1162,10 +1359,17 @@ TestCase {
   function test_assigningAWorkspaceAlreadyTakenTakesItFromTheOtherSetup() {
     threeWorkspaces()
     var store = makeStore({
-      Work: { windows: anArgvSetup(["work"]).windows, bootWorkspace: 3 },
-      Games: { windows: anArgvSetup(["games"]).windows }
+      Work: {
+        windows: anArgvSetup(["work"]).windows,
+        bootWorkspace: 3
+      },
+      Games: {
+        windows: anArgvSetup(["games"]).windows
+      }
     })
-    var view = createOverview({}, { store: store })
+    var view = createOverview({}, {
+      store: store
+    })
 
     mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
     mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-3"))
@@ -1178,8 +1382,13 @@ TestCase {
   // already up, same as the settings/save cards only ever show one at once.
   function test_openingAnotherChipsPickerClosesTheFirst() {
     threeWorkspaces()
-    var store = makeStore({ Games: anArgvSetup(["games"]), Work: anArgvSetup(["work"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Games: anArgvSetup(["games"]),
+      Work: anArgvSetup(["work"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
 
     mouseClick(findChild(chipFor(view, "Work"), "setupBootMouseArea"))
     verify(findChild(chipFor(view, "Work"), "setupBootPopover").visible)
@@ -1191,8 +1400,12 @@ TestCase {
 
   function test_clickingTheBootButtonAgainClosesItsOwnPicker() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
     var chip = chipFor(view, "Work")
 
     mouseClick(findChild(chip, "setupBootMouseArea"))
@@ -1205,8 +1418,12 @@ TestCase {
   // assignment - same pattern as the settings/save card's own backdrop.
   function test_clickingOutsideClosesThePickerWithoutChangingTheAssignment() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
     var chip = chipFor(view, "Work")
 
     mouseClick(findChild(chip, "setupBootMouseArea"))
@@ -1220,8 +1437,12 @@ TestCase {
   // layer behind it and close it before the option click registers.
   function test_thePickerSwallowsClicksOnItsOwnSurface() {
     threeWorkspaces()
-    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
-    var view = createOverview({}, { store: store })
+    var store = makeStore({
+      Work: anArgvSetup(["some-tool"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
     var chip = chipFor(view, "Work")
 
     mouseClick(findChild(chip, "setupBootMouseArea"))
@@ -1255,8 +1476,7 @@ TestCase {
     threeWorkspaces()
     var view = createOverview()
     view.suspended = true
-    verify(captureOf(findChild(cardWindow(view, 2, 0), "cardThumb")) !== null,
-      "the previews were torn down behind the settings form")
+    verify(captureOf(findChild(cardWindow(view, 2, 0), "cardThumb")) !== null, "the previews were torn down behind the settings form")
   }
 
   // ---- drag and drop --------------------------------------------------------
@@ -1339,10 +1559,8 @@ TestCase {
     threeWorkspaces()
     var view = createOverview()
 
-    verify(findChild(findChild(cardFor(view, 2), "cardSurface"), "cardSurfaceBody").clip,
-      "the card should still clip its wallpaper")
-    verify(!findChild(cardFor(view, 2), "cardWindowLayer").clip,
-      "the windows are clipped to their card and would vanish when dragged off it")
+    verify(findChild(findChild(cardFor(view, 2), "cardSurface"), "cardSurfaceBody").clip, "the card should still clip its wallpaper")
+    verify(!findChild(cardFor(view, 2), "cardWindowLayer").clip, "the windows are clipped to their card and would vanish when dragged off it")
   }
 
   function test_droppingAWindowBackOnItsOwnCardAsksForNothing() {
@@ -1372,11 +1590,7 @@ TestCase {
 
     // Card 2 dropped onto card 1: 2's windows land on 1, 1's on 2.
     dragOnto(findChild(cardFor(view, 2), "cardHandleMouseArea"), cardFor(view, 1))
-    compare(Hyprland.testDispatched, [
-      moveRequest(browser, 1),
-      moveRequest(editor, 1),
-      moveRequest(terminal, 2)
-    ])
+    compare(Hyprland.testDispatched, [moveRequest(browser, 1), moveRequest(editor, 1), moveRequest(terminal, 2)])
   }
 
   function test_droppingACardOnItselfMovesNothing() {

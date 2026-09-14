@@ -89,9 +89,20 @@ function classifyIconValue(value, iconPathLookup) {
   return { kind: "text", value: text }
 }
 
+// A window class is whatever the app running in it says it is, so it can
+// collide with a name every object inherits - a window classing itself
+// "constructor" or "__proto__" would otherwise read Object.prototype's
+// member and render it as this app's icon. Only the map's own keys count.
 function lookupIconOverride(overrides, key) {
   if (!overrides) return ""
-  return String(overrides[key] || overrides[key.toLowerCase()] || "")
+  var name = String(key || "")
+  if (own(overrides, name)) return String(overrides[name] || "")
+  var lower = name.toLowerCase()
+  return own(overrides, lower) ? String(overrides[lower] || "") : ""
+}
+
+function own(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key)
 }
 
 // Steam sets a game window's class to "steam_app_<appid>" (Proton and native
@@ -361,6 +372,29 @@ function navigateGrid(index, count, columns, direction) {
     return row === Math.floor((total - 1) / width) ? current : total - 1
   }
   return current
+}
+
+// Where the wheel moves the overview's selection: one card per notch, in the
+// order the cards are laid out rather than by grid direction. A wheel has one
+// axis and the cards read left to right, top to bottom, so "the next one" is
+// the honest reading of a notch - stepping a whole row per notch, the way a
+// down arrow does, would skip past cards the pointer is sitting next to.
+//
+// Stops at the ends rather than wrapping, same as `navigateGrid`.
+//
+// `angleDelta` is Qt's own: positive when the wheel is rolled away from the
+// user, which is "up" and so the previous card.
+function navigateWheel(index, count, angleDelta) {
+  var total = Math.max(0, Number(count) || 0)
+  if (total === 0) return -1
+  var current = Number(index)
+  if (!(current >= 0 && current < total)) return 0
+
+  var delta = Number(angleDelta) || 0
+  if (delta === 0) return current
+
+  var next = current + (delta > 0 ? -1 : 1)
+  return Math.min(total - 1, Math.max(0, next))
 }
 
 // The window moves that drag a workspace from one place in the strip to
@@ -703,6 +737,33 @@ function validateSetupFile(raw) {
   for (var name in parsed.setups)
     if (validateSetupEntry(parsed.setups[name])) setups[name] = parsed.setups[name]
   return setups
+}
+
+// Renames a setup, keeping everything it holds - its windows and whichever
+// boot workspace it was assigned. Every setup lives in one document keyed by
+// name, so a rename is a key change and the whole map is rewritten.
+//
+// Returns null rather than a changed map for anything that isn't a rename
+// that can go ahead: an unknown setup, a blank name, the name it already has,
+// or one another setup is using. The caller shows why using
+// `setupNameStatus`; refusing here is what keeps a rename from quietly
+// swallowing the setup it collided with.
+function renameSetup(setups, from, to) {
+  var current = setups || {}
+  var oldName = String(from || "")
+  var newName = String(to || "").trim()
+
+  if (!own(current, oldName)) return null
+  if (newName.length === 0) return null
+  if (newName === oldName) return null
+  if (own(current, newName)) return null
+
+  var next = {}
+  for (var key in current) {
+    if (key === oldName) next[newName] = current[key]
+    else next[key] = current[key]
+  }
+  return next
 }
 
 // Which windows a drop onto an already-occupied workspace has to close
@@ -1164,6 +1225,7 @@ if (typeof module !== "undefined" && module.exports) {
     nextWorkspaceId: nextWorkspaceId,
     windowSelector: windowSelector,
     navigateGrid: navigateGrid,
+    navigateWheel: navigateWheel,
     planReorder: planReorder,
     sameIds: sameIds,
     clampSetting: clampSetting,
@@ -1178,6 +1240,7 @@ if (typeof module !== "undefined" && module.exports) {
     overlayEscape: overlayEscape,
     SETUP_SCHEMA_VERSION: SETUP_SCHEMA_VERSION,
     setupNameStatus: setupNameStatus,
+    renameSetup: renameSetup,
     validateSetupWindow: validateSetupWindow,
     validateSetupEntry: validateSetupEntry,
     validateSetupFile: validateSetupFile,

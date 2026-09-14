@@ -44,9 +44,16 @@ normalize() {
   tr '+' ' ' <<<"$1" | tr '[:lower:]' '[:upper:]' | tr -s '[:space:]' '\n' | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ *$//'
 }
 
-# Prints the description of whatever the listing already resolves the given
-# key combo to, or nothing if it's free.
-existing_description_for() {
+# Prints "bound|<description>" for a key the listing already resolves to
+# something, or "free|" for one it doesn't.
+#
+# Whether the key is taken and what it's taken by are two separate answers,
+# not one: a binding is allowed to carry no description at all, and reading
+# "no description" as "no binding" would report an occupied key as free and
+# then quietly shadow it. Only the first field decides whether a key can be
+# written to; the description is for the message and the already-set-up
+# check.
+binding_state_for() {
   local norm_key
   norm_key="$(normalize "$1")"
   local line combo desc
@@ -57,36 +64,46 @@ existing_description_for() {
     combo="$(sed 's/[[:space:]]*$//' <<<"$combo")"
     desc="$(sed 's/^[[:space:]]*//' <<<"$desc")"
     if [[ "$(normalize "$combo")" == "$norm_key" ]]; then
-      echo "$desc"
+      printf 'bound|%s\n' "$desc"
       return 0
     fi
   done <<<"$listing"
+  printf 'free|\n'
   return 0
+}
+
+# How to name a binding in a message when it has no description of its own.
+describe() {
+  [[ -n "$1" ]] && echo "\"$1\"" || echo "a binding with no description"
 }
 
 # Checks one candidate against the listing and reports what it found.
 # Echoes the candidate back out (for the caller to collect) only when it's
 # free to add.
 check_binding() {
-  local entry="$1" key description existing
+  local entry="$1" key description state bound existing
   IFS='|' read -r key description _ <<<"$entry"
-  existing="$(existing_description_for "$key")"
+  state="$(binding_state_for "$key")"
+  bound="${state%%|*}"
+  existing="${state#*|}"
 
-  if [[ -z "$existing" ]]; then
+  if [[ "$bound" == "free" ]]; then
     echo "  $key -> free, will add \"$description\"" >&2
     echo "$entry"
   elif [[ "$existing" == "$description" ]]; then
     echo "  $key -> already set up" >&2
   else
-    echo "  $key -> already bound to \"$existing\", skipping" >&2
+    echo "  $key -> already bound to $(describe "$existing"), skipping" >&2
   fi
 }
 
 echo "Checking keybindings against \`omarchy menu keybindings --print\`..." >&2
 
-overview_existing="$(existing_description_for "SUPER + Q")"
-if [[ -n "$overview_existing" && "$overview_existing" != "Workspace overview" ]]; then
-  echo "  SUPER + Q -> already bound to \"$overview_existing\"" >&2
+overview_state="$(binding_state_for "SUPER + Q")"
+overview_bound="${overview_state%%|*}"
+overview_existing="${overview_state#*|}"
+if [[ "$overview_bound" == "bound" && "$overview_existing" != "Workspace overview" ]]; then
+  echo "  SUPER + Q -> already bound to $(describe "$overview_existing")" >&2
   echo "SUPER + Q is the overview's own key and is already taken - aborting without changing anything." >&2
   echo "Pick a free key yourself and add it as shown in the README, under \"Opening it\"." >&2
   exit 1

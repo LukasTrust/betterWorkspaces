@@ -16,7 +16,7 @@ Item {
   property color accent: "#88aaff"
   property var background: null
 
-  signal accepted()
+  signal accepted
 
   implicitWidth: 200
   implicitHeight: 30

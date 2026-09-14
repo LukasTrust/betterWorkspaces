@@ -63,8 +63,12 @@ TestCase {
   }
 
   function createView(settings, store) {
-    var props = { shell: fakeShell, settings: settings || {} }
-    if (store !== undefined) props.store = store
+    var props = {
+      shell: fakeShell,
+      settings: settings || {}
+    }
+    if (store !== undefined)
+      props.store = store
     var view = createTemporaryObject(viewComponent, testCase, props)
     verify(view !== null, "settings view should be created")
     return view
@@ -81,7 +85,23 @@ TestCase {
 
   function aSetup(bootWorkspace) {
     return {
-      windows: [{ recipe: { type: "desktop-entry", id: "x" }, class: "x", floating: false, fullscreen: false, rect: { x: 0, y: 0, width: 1, height: 1 } }],
+      windows: [
+        {
+          recipe: {
+            type: "desktop-entry",
+            id: "x"
+          },
+          class: "x",
+          floating: false,
+          fullscreen: false,
+          rect: {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1
+          }
+        }
+      ],
       bootWorkspace: bootWorkspace === undefined ? null : bootWorkspace
     }
   }
@@ -168,19 +188,25 @@ TestCase {
   }
 
   function test_theCurrentEnumValueIsMarkedSelected() {
-    var view = createView({ setupTargetMode: "replace" })
+    var view = createView({
+      setupTargetMode: "replace"
+    })
     verify(optionButton(view, "setupTargetMode", "replace").selected)
     verify(!optionButton(view, "setupTargetMode", "add").selected)
   }
 
   function test_anUnusableEnumValueShowsTheDefaultAsSelected() {
-    var view = createView({ setupTargetMode: "overwrite-everything" })
+    var view = createView({
+      setupTargetMode: "overwrite-everything"
+    })
     verify(optionButton(view, "setupTargetMode", "add").selected)
     verify(!optionButton(view, "setupTargetMode", "replace").selected)
   }
 
   function test_clickingAnOptionWritesTheEntryBack() {
-    var view = createView({ maxIcons: 3 })
+    var view = createView({
+      maxIcons: 3
+    })
     mouseClick(optionButton(view, "setupTargetMode", "replace"))
 
     compare(fakeShell.testWrites.length, 1)
@@ -294,7 +320,10 @@ TestCase {
   }
 
   function test_showsOneRowPerSetupSortedByName() {
-    var store = makeStore({ Zeta: aSetup(3), Alpha: aSetup(null) })
+    var store = makeStore({
+      Zeta: aSetup(3),
+      Alpha: aSetup(null)
+    })
     var view = createView({}, store)
     verify(findChild(view, "bootSection").visible)
     compare(findChild(view, "bootRepeater").count, 2)
@@ -302,14 +331,19 @@ TestCase {
   }
 
   function test_showsTheCurrentBootWorkspaceOrZeroForOff() {
-    var store = makeStore({ Work: aSetup(5), Games: aSetup(null) })
+    var store = makeStore({
+      Work: aSetup(5),
+      Games: aSetup(null)
+    })
     var view = createView({}, store)
     compare(findChild(findChild(view, "boot-Work"), "bootField").value, 5)
     compare(findChild(findChild(view, "boot-Games"), "bootField").value, 0)
   }
 
   function test_editingABootFieldWritesTheAssignmentBack() {
-    var store = makeStore({ Work: aSetup(null) })
+    var store = makeStore({
+      Work: aSetup(null)
+    })
     var view = createView({}, store)
 
     findChild(findChild(view, "boot-Work"), "bootField").testType(4)
@@ -321,13 +355,139 @@ TestCase {
   // Assigning a workspace another setup already had takes it away from
   // that one, rather than leaving two setups claiming the same slot.
   function test_editingABootFieldClearsWhoeverElseHadThatWorkspace() {
-    var store = makeStore({ Work: aSetup(4), Games: aSetup(null) })
+    var store = makeStore({
+      Work: aSetup(4),
+      Games: aSetup(null)
+    })
     var view = createView({}, store)
 
     findChild(findChild(view, "boot-Games"), "bootField").testType(4)
 
     compare(store.setups.Games.bootWorkspace, 4)
     compare(store.setups.Work.bootWorkspace, null)
+  }
+
+  // ---- renaming a setup -------------------------------------------------
+
+  function nameFieldFor(view, name) {
+    return findChild(findChild(view, "boot-" + name), "nameField")
+  }
+
+  function renameErrorFor(view, name) {
+    return findChild(findChild(view, "boot-" + name), "renameError")
+  }
+
+  function test_eachRowStartsOnItsSetupsOwnName() {
+    var view = createView({}, makeStore({
+      Work: aSetup(null),
+      Games: aSetup(null)
+    }))
+    compare(nameFieldFor(view, "Work").text, "Work")
+    compare(nameFieldFor(view, "Games").text, "Games")
+  }
+
+  function test_renamingASetupWritesItBackUnderTheNewName() {
+    var store = makeStore({
+      Work: aSetup(3)
+    })
+    var view = createView({}, store)
+
+    var field = nameFieldFor(view, "Work")
+    field.text = "Office"
+    field.accepted()
+
+    compare(Object.keys(store.setups), ["Office"])
+    // The rest of the setup rides along - a rename is not a reset.
+    compare(store.setups.Office.bootWorkspace, 3)
+    compare(findChild(store, "setupsFile").testWrites.length, 1)
+  }
+
+  function test_renamingTrimsTheNameTheWaySavingOneDoes() {
+    var store = makeStore({
+      Work: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    var field = nameFieldFor(view, "Work")
+    field.text = "   Office   "
+    field.accepted()
+
+    compare(Object.keys(store.setups), ["Office"])
+  }
+
+  // Taking a name another setup holds would drop that setup, so it's
+  // refused and said so rather than carried out.
+  function test_renamingOntoAnotherSetupsNameIsRefusedAndExplained() {
+    var store = makeStore({
+      Work: aSetup(null),
+      Games: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    var field = nameFieldFor(view, "Work")
+    field.text = "Games"
+    field.accepted()
+
+    compare(Object.keys(store.setups).sort(), ["Games", "Work"])
+    compare(findChild(store, "setupsFile").testWrites.length, 0)
+    verify(renameErrorFor(view, "Work").visible)
+    verify(renameErrorFor(view, "Work").text.indexOf("Games") !== -1)
+    // Only the row that was refused says so.
+    verify(!renameErrorFor(view, "Games").visible)
+  }
+
+  function test_renamingToABlankNameIsRefusedAndExplained() {
+    var store = makeStore({
+      Work: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    var field = nameFieldFor(view, "Work")
+    field.text = "   "
+    field.accepted()
+
+    compare(Object.keys(store.setups), ["Work"])
+    compare(findChild(store, "setupsFile").testWrites.length, 0)
+    verify(renameErrorFor(view, "Work").visible)
+  }
+
+  // Pressing Enter having changed nothing is not an error, and not a write.
+  function test_confirmingTheNameItAlreadyHasDoesNothing() {
+    var store = makeStore({
+      Work: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    var field = nameFieldFor(view, "Work")
+    field.accepted()
+
+    compare(findChild(store, "setupsFile").testWrites.length, 0)
+    verify(!renameErrorFor(view, "Work").visible)
+  }
+
+  function test_aSuccessfulRenameClearsAnEarlierComplaint() {
+    var store = makeStore({
+      Work: aSetup(null),
+      Games: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    var field = nameFieldFor(view, "Work")
+    field.text = "Games"
+    field.accepted()
+    verify(renameErrorFor(view, "Work").visible)
+
+    field.text = "Office"
+    field.accepted()
+
+    compare(Object.keys(store.setups).sort(), ["Games", "Office"])
+    compare(view.renameError, "")
+  }
+
+  function test_renamingWithoutAStoreDoesNothing() {
+    var view = createView({})
+    view.renameSetup("Work", "Office")
+    compare(view.renameError, "")
   }
 
   function test_worksWithoutAShellToWriteTo() {

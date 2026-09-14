@@ -21,7 +21,11 @@ TestCase {
     id: serviceComponent
     // A tiny settleMs so the debounce timer fires fast in tests; the real
     // default (1000ms) is only about surviving a slow multi-monitor boot.
-    Plugin.Service { settleMs: 10; runtimeDir: "/tmp/better-workspaces-test"; signature: "sig-a" }
+    Plugin.Service {
+      settleMs: 10
+      runtimeDir: "/tmp/better-workspaces-test"
+      signature: "sig-a"
+    }
   }
 
   Component {
@@ -63,13 +67,23 @@ TestCase {
 
   function anArgvSetup(argv, bootWorkspace) {
     return {
-      windows: [{
-        recipe: { type: "argv", argv: argv },
-        class: "x",
-        floating: false,
-        fullscreen: false,
-        rect: { x: 0, y: 0, width: 1, height: 1 }
-      }],
+      windows: [
+        {
+          recipe: {
+            type: "argv",
+            argv: argv
+          },
+          class: "x",
+          floating: false,
+          fullscreen: false,
+          rect: {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1
+          }
+        }
+      ],
       bootWorkspace: bootWorkspace
     }
   }
@@ -81,7 +95,9 @@ TestCase {
   // A toplevel that isn't attached to any workspace fixture - all the
   // opener reads off it is an address.
   function insertToplevel(address) {
-    var toplevel = createTemporaryObject(toplevelComponent, testCase, { address: address })
+    var toplevel = createTemporaryObject(toplevelComponent, testCase, {
+      address: address
+    })
     Hyprland.toplevels.testInsert(toplevel)
     return toplevel
   }
@@ -89,8 +105,12 @@ TestCase {
   // ---- whether it runs at all ------------------------------------------------
 
   function test_neverBootsWithoutASignature() {
-    var service = makeService({ signature: "" })
-    seedSetups(service, { Work: anArgvSetup(["work-app"], 1) })
+    var service = makeService({
+      signature: ""
+    })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 1)
+    })
 
     wait(50)
     compare(Quickshell.testExecuted, [])
@@ -99,7 +119,9 @@ TestCase {
 
   function test_firstBootWritesTheGuardAndOpensTheAssignedSetup() {
     var service = makeService()
-    seedSetups(service, { Work: anArgvSetup(["work-app"], 1) })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 1)
+    })
 
     tryCompare(Quickshell, "testExecuted", [["work-app"]])
     tryCompare(guardOf(service), "testWrites", ["sig-a"])
@@ -111,7 +133,9 @@ TestCase {
   // happened to be focused instead of its own assigned workspace.
   function test_focusesTheAssignedWorkspaceBeforeOpeningEachSetup() {
     var service = makeService()
-    seedSetups(service, { Work: anArgvSetup(["work-app"], 3) })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 3)
+    })
 
     tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"3\" })"])
     compare(Quickshell.testExecuted, [["work-app"]])
@@ -126,10 +150,7 @@ TestCase {
 
     tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })"])
     insertToplevel("1")
-    tryCompare(Hyprland, "testDispatched", [
-      "hl.dsp.focus({ workspace = \"1\" })",
-      "hl.dsp.focus({ workspace = \"5\" })"
-    ])
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })", "hl.dsp.focus({ workspace = \"5\" })"])
   }
 
   // `omarchy restart shell` recreates the service, but the real guard file
@@ -142,7 +163,9 @@ TestCase {
   // service would if something else re-triggered it mid-session.
   function test_runningBootAgainWithTheSameGuardDoesNothing() {
     var service = makeService()
-    seedSetups(service, { Work: anArgvSetup(["work-app"], 1) })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 1)
+    })
 
     tryCompare(Quickshell, "testExecuted", [["work-app"]])
     // Let the opener actually finish before asking it to open anything else.
@@ -158,7 +181,9 @@ TestCase {
   // session's guard content doesn't suppress this one.
   function test_aDifferentSignatureBootsAgain() {
     var service = makeService()
-    seedSetups(service, { Work: anArgvSetup(["work-app"], 1) })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 1)
+    })
 
     tryCompare(Quickshell, "testExecuted", [["work-app"]])
     insertToplevel("1")
@@ -189,7 +214,9 @@ TestCase {
 
   function test_ignoresSetupsWithNoBootWorkspaceAssigned() {
     var service = makeService()
-    seedSetups(service, { Work: anArgvSetup(["work-app"], null) })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], null)
+    })
 
     wait(50)
     compare(Quickshell.testExecuted, [])
@@ -204,7 +231,9 @@ TestCase {
   // boot start against a layout that's still being discovered.
   function test_aMonitorAppearingRestartsTheWait() {
     var service = makeService()
-    seedSetups(service, { Work: anArgvSetup(["work-app"], 1) })
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 1)
+    })
 
     Hyprland.monitors.testInsert(makeMonitor())
     // Nothing has run yet - a Timer never fires synchronously off the

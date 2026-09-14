@@ -15,6 +15,7 @@ const {
   nextWorkspaceId,
   windowSelector,
   navigateGrid,
+  navigateWheel,
   planReorder,
   clampSetting,
   SETTING_FIELDS,
@@ -28,6 +29,7 @@ const {
   overlayEscape,
   SETUP_SCHEMA_VERSION,
   setupNameStatus,
+  renameSetup,
   validateSetupWindow,
   validateSetupEntry,
   validateSetupFile,
@@ -156,6 +158,19 @@ test("lookupIconOverride matches a key exactly, then case-insensitively", () => 
   assert.equal(lookupIconOverride({ firefox: "🦊" }, "Firefox"), "🦊")
   assert.equal(lookupIconOverride({ firefox: "🦊" }, "steam"), "")
   assert.equal(lookupIconOverride(null, "firefox"), "")
+  assert.equal(lookupIconOverride({ firefox: "🦊" }, ""), "")
+})
+
+// A window class comes from the app, not from the user, so it can name
+// something every object inherits - that must read as "no override", not as
+// whatever Object.prototype has under that name.
+test("lookupIconOverride ignores inherited members, matching only own keys", () => {
+  assert.equal(lookupIconOverride({}, "constructor"), "")
+  assert.equal(lookupIconOverride({}, "__proto__"), "")
+  assert.equal(lookupIconOverride({}, "hasOwnProperty"), "")
+  assert.equal(lookupIconOverride({}, "toString"), "")
+  // An override the user really did write under such a name still works.
+  assert.equal(lookupIconOverride({ constructor: "🦊" }, "constructor"), "🦊")
 })
 
 test("steamAppId pulls the appid out of a Steam window class, else null", () => {
@@ -593,6 +608,32 @@ test("navigateGrid walks the grid and stops at its edges", () => {
   assert.equal(navigateGrid(1, 6, 3, "up"), 1)
 })
 
+test("navigateWheel steps one card per notch, in card order", () => {
+  // 0 1 2
+  // 3 4 5   - a notch moves by one, not by a whole row.
+  assert.equal(navigateWheel(0, 6, -120), 1)
+  assert.equal(navigateWheel(1, 6, -120), 2)
+  assert.equal(navigateWheel(2, 6, -120), 3)
+  assert.equal(navigateWheel(3, 6, 120), 2)
+})
+
+test("navigateWheel stops at both ends rather than wrapping", () => {
+  assert.equal(navigateWheel(5, 6, -120), 5)
+  assert.equal(navigateWheel(0, 6, 120), 0)
+})
+
+test("navigateWheel ignores a notch that carries no movement", () => {
+  assert.equal(navigateWheel(2, 6, 0), 2)
+  assert.equal(navigateWheel(2, 6, null), 2)
+  assert.equal(navigateWheel(2, 6, "nonsense"), 2)
+})
+
+test("navigateWheel copes with an empty or out-of-range selection", () => {
+  assert.equal(navigateWheel(0, 0, -120), -1)
+  assert.equal(navigateWheel(-1, 6, -120), 0)
+  assert.equal(navigateWheel(99, 6, -120), 0)
+})
+
 test("navigateGrid lands on the last item when the row below is short", () => {
   // 0 1 2
   // 3 4
@@ -708,6 +749,50 @@ test("setupNameStatus flags an existing name instead of rejecting it", () => {
 test("setupNameStatus accepts special characters and unicode - it is a label, not a filename", () => {
   assert.equal(setupNameStatus("🎮 Gaming / Night-Shift!", []), "ok")
   assert.equal(setupNameStatus("日本語", []), "ok")
+})
+
+// ---- renaming a setup --------------------------------------------------------
+
+const twoSetups = () => ({
+  Work: { windows: [aWindow()], bootWorkspace: 2 },
+  Games: { windows: [aWindow()], bootWorkspace: null }
+})
+
+test("renameSetup moves a setup to its new name, keeping everything it holds", () => {
+  const renamed = renameSetup(twoSetups(), "Work", "Office")
+  assert.deepEqual(Object.keys(renamed).sort(), ["Games", "Office"])
+  assert.equal(renamed.Office.bootWorkspace, 2)
+  assert.deepEqual(renamed.Office.windows, [aWindow()])
+  assert.equal("Work" in renamed, false)
+})
+
+test("renameSetup trims the new name, the way saving one does", () => {
+  const renamed = renameSetup(twoSetups(), "Work", "   Office   ")
+  assert.ok("Office" in renamed)
+})
+
+test("renameSetup refuses anything that isn't a rename it can carry out", () => {
+  // Unknown setup, blank name, the name it already has, and a name another
+  // setup is using - that last one would otherwise swallow "Games".
+  assert.equal(renameSetup(twoSetups(), "Nope", "Office"), null)
+  assert.equal(renameSetup(twoSetups(), "Work", "   "), null)
+  assert.equal(renameSetup(twoSetups(), "Work", ""), null)
+  assert.equal(renameSetup(twoSetups(), "Work", "Work"), null)
+  assert.equal(renameSetup(twoSetups(), "Work", "Games"), null)
+})
+
+test("renameSetup leaves the setups it was given untouched", () => {
+  const before = twoSetups()
+  renameSetup(before, "Work", "Office")
+  assert.deepEqual(Object.keys(before).sort(), ["Games", "Work"])
+})
+
+test("renameSetup copes with nothing usable passed in", () => {
+  assert.equal(renameSetup(null, "Work", "Office"), null)
+  assert.equal(renameSetup({}, "Work", "Office"), null)
+  // An inherited name is not a setup that exists, and not one that collides.
+  assert.equal(renameSetup(twoSetups(), "constructor", "Office"), null)
+  assert.ok("toString" in renameSetup(twoSetups(), "Work", "toString"))
 })
 
 test("validateSetupWindow accepts a desktop-entry or argv recipe", () => {

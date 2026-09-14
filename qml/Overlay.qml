@@ -113,8 +113,7 @@ Item {
   // Which workspace the save dialog is actually showing - `saveWorkspaceId`
   // itself stays 0 when summoned directly, with SaveSetupView resolving the
   // focused workspace on its own; the title needs that same number.
-  readonly property int resolvedSaveWorkspaceId: root.saveWorkspaceId > 0 ? root.saveWorkspaceId
-    : (Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
+  readonly property int resolvedSaveWorkspaceId: root.saveWorkspaceId > 0 ? root.saveWorkspaceId : (Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
 
   // The screen Hyprland says has focus, so the overview opens where you are
   // rather than on whichever monitor Quickshell happens to list first.
@@ -229,7 +228,14 @@ Item {
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
       // BorderSurface only exposes its insets; children place themselves.
-      height: content.implicitHeight + card.contentTopInset + card.contentBottomInset
+      //
+      // The card is as tall as its content right up to the point where that
+      // would run off the screen, and no taller - the settings grow by a row
+      // per saved setup (the boot assignments), so there is no content height
+      // that can be assumed to fit. Past that the content scrolls instead,
+      // which is the difference between a long list being awkward and its
+      // last rows being unreachable.
+      height: Math.min(content.implicitHeight + card.contentTopInset + card.contentBottomInset, panel.height - Style.gapsOut * 2)
 
       // Clicks inside the card must not reach the dismiss area behind it.
       MouseArea {
@@ -237,56 +243,67 @@ Item {
         onClicked: {}
       }
 
-      Column {
-        id: content
+      Flickable {
+        id: cardScroll
 
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.fill: parent
         anchors.topMargin: card.contentTopInset
+        anchors.bottomMargin: card.contentBottomInset
         anchors.leftMargin: card.contentLeftInset
         anchors.rightMargin: card.contentRightInset
-        spacing: Style.spacing.lg
+        contentWidth: width
+        contentHeight: content.implicitHeight
+        clip: true
+        // Nothing to drag while it all fits: leaving it interactive would
+        // let a stray drag on a settings row rubber-band the whole form.
+        interactive: contentHeight > height
+        boundsBehavior: Flickable.StopAtBounds
 
-        Text {
-          objectName: "overlayTitle"
-          textFormat: Text.PlainText
-          text: root.saveOpen ? "Save workspace " + (root.resolvedSaveWorkspaceId === 10 ? "0" : root.resolvedSaveWorkspaceId) : "Better Workspaces"
-          color: Color.menu.text
-          font.family: Style.font.family
-          font.pixelSize: Style.font.title
-        }
+        Column {
+          id: content
 
-        SettingsView {
-          objectName: "settingsView"
-          visible: root.settingsOpen
-          width: content.width
-          height: visible ? implicitHeight : 0
-          shell: root.shell
-          pluginId: root.pluginId
-          settings: root.widgetSettings
-          store: setupStore
-        }
+          width: cardScroll.width
+          spacing: Style.spacing.lg
 
-        SaveSetupView {
-          objectName: "saveSetupView"
-          visible: root.saveOpen
-          width: content.width
-          height: visible ? implicitHeight : 0
-          settings: root.widgetSettings
-          store: setupStore
-          workspaceId: root.saveWorkspaceId
-        }
+          Text {
+            objectName: "overlayTitle"
+            textFormat: Text.PlainText
+            text: root.saveOpen ? "Save workspace " + (root.resolvedSaveWorkspaceId === 10 ? "0" : root.resolvedSaveWorkspaceId) : "Better Workspaces"
+            color: Color.menu.text
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+          }
 
-        Text {
-          objectName: "overlayHint"
-          textFormat: Text.PlainText
-          text: root.saveOpen ? "Enter saves - Esc " + (root.view === "overview" ? "goes back to the overview" : "closes")
-            : (root.view === "overview" ? "Changes apply immediately - Esc goes back to the overview" : "Changes apply immediately - Esc closes")
-          color: Color.menu.text
-          opacity: 0.7
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          SettingsView {
+            objectName: "settingsView"
+            visible: root.settingsOpen
+            width: content.width
+            height: visible ? implicitHeight : 0
+            shell: root.shell
+            pluginId: root.pluginId
+            settings: root.widgetSettings
+            store: setupStore
+          }
+
+          SaveSetupView {
+            objectName: "saveSetupView"
+            visible: root.saveOpen
+            width: content.width
+            height: visible ? implicitHeight : 0
+            settings: root.widgetSettings
+            store: setupStore
+            workspaceId: root.saveWorkspaceId
+          }
+
+          Text {
+            objectName: "overlayHint"
+            textFormat: Text.PlainText
+            text: root.saveOpen ? "Enter saves - Esc " + (root.view === "overview" ? "goes back to the overview" : "closes") : (root.view === "overview" ? "Changes apply immediately - Esc goes back to the overview" : "Changes apply immediately - Esc closes")
+            color: Color.menu.text
+            opacity: 0.7
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
         }
       }
     }

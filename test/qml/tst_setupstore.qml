@@ -36,27 +36,47 @@ TestCase {
     return findChild(store, "mkdirProcess")
   }
 
+  function dirModeOf(store) {
+    return findChild(store, "dirModeProcess")
+  }
+
   function chmodOf(store) {
     return findChild(store, "chmodProcess")
   }
 
   function committedSpy(store) {
-    return createTemporaryObject(spyComponent, testCase, { target: store, signalName: "committed" })
+    return createTemporaryObject(spyComponent, testCase, {
+      target: store,
+      signalName: "committed"
+    })
   }
 
   function failedSpy(store) {
-    return createTemporaryObject(spyComponent, testCase, { target: store, signalName: "saveFailed" })
+    return createTemporaryObject(spyComponent, testCase, {
+      target: store,
+      signalName: "saveFailed"
+    })
   }
 
   function aSetup(name) {
     return {
-      windows: [{
-        recipe: { type: "desktop-entry", id: name + ".desktop" },
-        class: name,
-        floating: false,
-        fullscreen: false,
-        rect: { x: 0, y: 0, width: 1, height: 1 }
-      }]
+      windows: [
+        {
+          recipe: {
+            type: "desktop-entry",
+            id: name + ".desktop"
+          },
+          class: name,
+          floating: false,
+          fullscreen: false,
+          rect: {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1
+          }
+        }
+      ]
     }
   }
 
@@ -72,7 +92,9 @@ TestCase {
     var store = makeStore()
     fileOf(store).testSetContent(JSON.stringify({
       schemaVersion: 1,
-      setups: { Work: aSetup("firefox") }
+      setups: {
+        Work: aSetup("firefox")
+      }
     }))
     compare(Object.keys(store.setups), ["Work"])
   }
@@ -82,7 +104,12 @@ TestCase {
     fileOf(store).testSetContent("{not json")
     compare(Object.keys(store.setups).length, 0)
 
-    fileOf(store).testSetContent(JSON.stringify({ schemaVersion: 99, setups: { Work: aSetup("firefox") } }))
+    fileOf(store).testSetContent(JSON.stringify({
+      schemaVersion: 99,
+      setups: {
+        Work: aSetup("firefox")
+      }
+    }))
     compare(Object.keys(store.setups).length, 0)
   }
 
@@ -98,6 +125,9 @@ TestCase {
     compare(mkdirOf(store).testRunHistory.length, 1)
     compare(mkdirOf(store).testRunHistory[0], ["mkdir", "-p", "-m", "0700", store.configDir])
 
+    compare(dirModeOf(store).testRunHistory.length, 1)
+    compare(dirModeOf(store).testRunHistory[0], ["chmod", "0700", store.configDir])
+
     compare(fileOf(store).testWrites.length, 1)
     var written = JSON.parse(fileOf(store).testWrites[0])
     compare(written.schemaVersion, 1)
@@ -109,11 +139,49 @@ TestCase {
     compare(committed.count, 1)
   }
 
+  // `mkdir -m` only applies to a directory it creates, so the mode has to be
+  // set on its own every time or a pre-existing loose directory stays loose
+  // forever - the case this exists for can't be told apart from any other by
+  // looking at mkdir's exit code.
+  function test_everySaveNarrowsTheDirectoryNotJustTheFirst() {
+    var store = makeStore()
+    fileOf(store).testSetContent(JSON.stringify({
+      schemaVersion: 1,
+      setups: {}
+    }))
+
+    store.save("Work", aSetup("firefox"))
+    store.save("Games", aSetup("steam"))
+
+    compare(dirModeOf(store).testRunHistory.length, 2)
+    compare(dirModeOf(store).testRunHistory[1], ["chmod", "0700", store.configDir])
+  }
+
+  // Nothing is written into a directory whose permissions couldn't be
+  // narrowed: the write is what carries the command lines worth protecting.
+  function test_aFailedDirectoryChmodReportsFailureAndWritesNothing() {
+    var store = makeStore()
+    fileOf(store).testSetMissing()
+    dirModeOf(store).testExitCode = 1
+    var committed = committedSpy(store)
+    var failed = failedSpy(store)
+
+    store.save("Work", aSetup("firefox"))
+
+    compare(fileOf(store).testWrites.length, 0)
+    compare(chmodOf(store).testRunHistory.length, 0)
+    tryCompare(failed, "count", 1)
+    compare(committed.count, 0)
+  }
+
   function test_saveKeepsEveryOtherSetupAndOnlyReplacesTheNamedOne() {
     var store = makeStore()
     fileOf(store).testSetContent(JSON.stringify({
       schemaVersion: 1,
-      setups: { Work: aSetup("firefox"), Games: aSetup("steam") }
+      setups: {
+        Work: aSetup("firefox"),
+        Games: aSetup("steam")
+      }
     }))
 
     store.save("Work", aSetup("code"))
@@ -138,7 +206,10 @@ TestCase {
     var store = makeStore()
     fileOf(store).testSetContent(JSON.stringify({
       schemaVersion: 1,
-      setups: { Work: aSetup("firefox"), Games: aSetup("steam") }
+      setups: {
+        Work: aSetup("firefox"),
+        Games: aSetup("steam")
+      }
     }))
 
     store.remove("Games")

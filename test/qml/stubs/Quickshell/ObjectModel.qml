@@ -28,7 +28,8 @@ QtObject {
 
   function testRemove(object) {
     var at = root.values.indexOf(object)
-    if (at === -1) return
+    if (at === -1)
+      return
     var next = root.values.slice()
     next.splice(at, 1)
     root.values = next

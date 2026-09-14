@@ -16,7 +16,8 @@ QtObject {
   signal exited(int exitCode, int exitStatus)
 
   onRunningChanged: {
-    if (!root.running) return
+    if (!root.running)
+      return
     root.testRunHistory = root.testRunHistory.concat([root.command.slice()])
     root.running = false
     root.exited(root.testExitCode, 0)

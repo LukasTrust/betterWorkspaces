@@ -89,7 +89,10 @@ Item {
     if (!appId)
       return null
     var themed = Quickshell.iconPath("steam_icon_" + appId, true)
-    return themed.length > 0 ? { kind: "image", source: themed } : null
+    return themed.length > 0 ? {
+      kind: "image",
+      source: themed
+    } : null
   }
 
   // The lookup `iconFor` runs, but keyed directly by a window class rather

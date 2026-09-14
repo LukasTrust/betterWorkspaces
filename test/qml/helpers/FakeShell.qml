@@ -36,18 +36,22 @@ QtObject {
   }
 
   function summon(id, payloadJson) {
-    api.testSummoned = api.testSummoned.concat([{
-      id: String(id || ""),
-      payload: String(payloadJson || "")
-    }])
+    api.testSummoned = api.testSummoned.concat([
+      {
+        id: String(id || ""),
+        payload: String(payloadJson || "")
+      }
+    ])
     return true
   }
 
   function toggle(id, payloadJson) {
-    api.testToggled = api.testToggled.concat([{
-      id: String(id || ""),
-      payload: String(payloadJson || "")
-    }])
+    api.testToggled = api.testToggled.concat([
+      {
+        id: String(id || ""),
+        payload: String(payloadJson || "")
+      }
+    ])
     return true
   }
 

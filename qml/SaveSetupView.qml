@@ -35,7 +35,8 @@ Item {
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
     for (var i = 0; i < values.length; i++)
-      if (values[i].id === id) return values[i]
+      if (values[i].id === id)
+        return values[i]
     return null
   }
 
@@ -45,7 +46,17 @@ Item {
   readonly property var monitor: (root.workspace && root.workspace.monitor) || Hyprland.focusedMonitor
   readonly property var monitorArea: {
     var m = root.monitor
-    return m ? { x: m.x, y: m.y, width: m.width, height: m.height } : { x: 0, y: 0, width: 0, height: 0 }
+    return m ? {
+      x: m.x,
+      y: m.y,
+      width: m.width,
+      height: m.height
+    } : {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    }
   }
 
   function windowRectOf(toplevel) {
@@ -92,14 +103,16 @@ Item {
 
   function argvFor(pid) {
     var numeric = Number(pid)
-    if (!(numeric > 0)) return null
+    if (!(numeric > 0))
+      return null
     cmdlineReader.path = "/proc/" + numeric + "/cmdline"
     var argv = Logic.parseProcCmdline(cmdlineReader.text())
     return argv.length > 0 ? argv : null
   }
 
   function desktopEntryIdFor(key) {
-    if (!key) return ""
+    if (!key)
+      return ""
     var entry = DesktopEntries.byId(key) || DesktopEntries.heuristicLookup(key)
     return entry ? String(entry.id || "") : ""
   }
@@ -138,11 +151,14 @@ Item {
 
   // ---- naming and saving ---------------------------------------------------
 
+  // Sorted, because these are now shown as well as scanned - the same order
+  // the overview's strip and the settings list use.
   readonly property var existingNames: {
     var list = []
     if (root.store)
-      for (var key in root.store.setups) list.push(key)
-    return list
+      for (var key in root.store.setups)
+        list.push(key)
+    return list.sort()
   }
 
   property bool triedEmptySubmit: false
@@ -180,13 +196,15 @@ Item {
     id: refreshSettleTimer
     objectName: "refreshSettleTimer"
     interval: root.refreshSettleMs
-    onTriggered: if (root.visible) root.refreshCapture()
+    onTriggered: if (root.visible)
+      root.refreshCapture()
   }
 
   property int refreshSettleMs: 150
 
   Component.onCompleted: root.open()
-  onVisibleChanged: if (root.visible) root.open()
+  onVisibleChanged: if (root.visible)
+    root.open()
   // Deferred rather than immediate: right after `workspaceId` changes,
   // `resolvedWorkspaceId` (and everything chained off it) hasn't
   // necessarily re-evaluated yet - QML doesn't guarantee a dependent
@@ -194,11 +212,13 @@ Item {
   // the same signal runs. `Qt.callLater` waits for everything to settle
   // first.
   onWorkspaceIdChanged: Qt.callLater(function () {
-    if (root.visible) root.refreshCapture()
+    if (root.visible)
+      root.refreshCapture()
   })
 
   function attemptSave() {
-    if (root.empty) return
+    if (root.empty)
+      return
     var trimmed = String(nameField.text || "").trim()
     var status = Logic.setupNameStatus(trimmed, root.existingNames)
     if (status === "empty") {
@@ -212,7 +232,9 @@ Item {
     }
     root.saveErrored = false
     if (root.store)
-      root.store.save(trimmed, { windows: root.capturedWindows })
+      root.store.save(trimmed, {
+        windows: root.capturedWindows
+      })
   }
 
   Connections {
@@ -254,8 +276,11 @@ Item {
         objectName: "previewBox"
         Layout.alignment: Qt.AlignHCenter
         readonly property real aspect: root.monitorArea.width > 0 && root.monitorArea.height > 0 ? root.monitorArea.height / root.monitorArea.width : 0.5625
-        width: Style.space(220)
-        height: width * aspect
+        // Implicit, not plain width/height: this sits in a ColumnLayout,
+        // which sizes its children itself - a literal width here is the
+        // layout's to overwrite rather than a size it will honour.
+        implicitWidth: Style.space(220)
+        implicitHeight: implicitWidth * previewBox.aspect
 
         CardSurface {
           id: previewCard
@@ -310,6 +335,78 @@ Item {
           root.saveErrored = false
         }
         onAccepted: root.attemptSave()
+      }
+
+      // Updating a setup you already have, without retyping its name
+      // exactly. Picking one only fills the field in - it stops at the same
+      // "press Enter again" confirmation a typed duplicate gets, because
+      // overwriting a setup is the one thing this dialog does that destroys
+      // something. Focus moves to the field so that Enter is where the hint
+      // says it is.
+      ColumnLayout {
+        objectName: "updateTargets"
+        visible: root.existingNames.length > 0
+        Layout.fillWidth: true
+        spacing: Style.spacing.xxs
+
+        Text {
+          objectName: "updateTargetsLabel"
+          textFormat: Text.PlainText
+          text: "Or update one you already saved:"
+          color: Color.menu.text
+          opacity: 0.7
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Flow {
+          objectName: "updateTargetsFlow"
+          Layout.fillWidth: true
+          spacing: Style.spacing.xs
+
+          Repeater {
+            objectName: "updateTargetRepeater"
+            model: root.existingNames
+
+            Rectangle {
+              id: target
+              required property string modelData
+
+              objectName: "updateTarget-" + target.modelData
+              implicitWidth: targetLabel.implicitWidth + Style.spacing.controlPaddingX * 2
+              implicitHeight: targetLabel.implicitHeight + Style.spacing.controlPaddingY * 2
+              width: implicitWidth
+              height: implicitHeight
+              radius: Style.cornerRadius
+              color: targetArea.containsMouse ? Color.menu.selectedBackground : "transparent"
+              border.width: Math.max(1, Style.space(1))
+              border.color: Color.menu.border
+
+              Text {
+                id: targetLabel
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: target.modelData
+                color: Color.menu.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                id: targetArea
+                objectName: "updateTargetMouseArea"
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  nameField.text = target.modelData
+                  nameField.forceActiveFocus()
+                  root.attemptSave()
+                }
+              }
+            }
+          }
+        }
       }
 
       Text {

@@ -107,14 +107,22 @@ TestCase {
   // entry, so the common case (no /proc read needed) is the default.
   function oneMatchedWindow(monitor) {
     DesktopEntries.testSetEntries({
-      firefox: { id: "firefox.desktop", name: "Firefox", icon: "firefox" }
+      firefox: {
+        id: "firefox.desktop",
+        name: "Firefox",
+        icon: "firefox"
+      }
     })
     var m = monitor || makeMonitor()
     var window = makeWindow("firefox", 111, [0, 0], [1920, 1080])
     var workspace = makeWorkspace(5, [window], m)
     Hyprland.workspaces.values = [workspace]
     Hyprland.focusedWorkspace = workspace
-    return { monitor: m, workspace: workspace, window: window }
+    return {
+      monitor: m,
+      workspace: workspace,
+      window: window
+    }
   }
 
   function makeStore() {
@@ -122,9 +130,13 @@ TestCase {
   }
 
   function makeView(overrides) {
-    var props = { width: testCase.width, workspaceId: 5 }
+    var props = {
+      width: testCase.width,
+      workspaceId: 5
+    }
     var extra = overrides || {}
-    for (var key in extra) props[key] = extra[key]
+    for (var key in extra)
+      props[key] = extra[key]
     return createTemporaryObject(viewComponent, testCase, props)
   }
 
@@ -148,7 +160,10 @@ TestCase {
     oneMatchedWindow()
     var view = makeView()
     compare(view.capturedWindows.length, 1)
-    compare(view.capturedWindows[0].recipe, { type: "desktop-entry", id: "firefox.desktop" })
+    compare(view.capturedWindows[0].recipe, {
+      type: "desktop-entry",
+      id: "firefox.desktop"
+    })
     compare(view.capturedWindows[0].class, "firefox")
     verify(!view.empty)
     verify(findChild(view, "saveForm").visible)
@@ -166,24 +181,38 @@ TestCase {
     reader.testSetContent(["some-tool", "--flag"].join(String.fromCharCode(0)) + String.fromCharCode(0), "/proc/222/cmdline")
     view.refreshCapture()
 
-    compare(view.capturedWindows[0].recipe, { type: "argv", argv: ["some-tool", "--flag"] })
+    compare(view.capturedWindows[0].recipe, {
+      type: "argv",
+      argv: ["some-tool", "--flag"]
+    })
   }
 
   function test_scalesTheRectRelativeToTheWorkspacesMonitor() {
     var monitor = makeMonitor()
     var window = makeWindow("firefox", 111, [960, 0], [960, 1080])
-    DesktopEntries.testSetEntries({ firefox: { id: "firefox.desktop" } })
+    DesktopEntries.testSetEntries({
+      firefox: {
+        id: "firefox.desktop"
+      }
+    })
     var workspace = makeWorkspace(5, [window], monitor)
     Hyprland.workspaces.values = [workspace]
     Hyprland.focusedWorkspace = workspace
 
     var view = makeView()
-    compare(view.capturedWindows[0].rect, { x: 0.5, y: 0, width: 0.5, height: 1 })
+    compare(view.capturedWindows[0].rect, {
+      x: 0.5,
+      y: 0,
+      width: 0.5,
+      height: 1
+    })
   }
 
   function test_workspaceIdZeroFallsBackToWhicheverIsFocused() {
     oneMatchedWindow()
-    var view = makeView({ workspaceId: 0 })
+    var view = makeView({
+      workspaceId: 0
+    })
     compare(view.resolvedWorkspaceId, 5)
     compare(view.capturedWindows.length, 1)
   }
@@ -212,26 +241,53 @@ TestCase {
   function test_aWindowWithStaleGeometryIsCapturedAgainOnceHyprlandReplies() {
     var monitor = makeMonitor()
     var window = makeWindow("foot", 111, [0, 0], [0, 0])
-    DesktopEntries.testSetEntries({ foot: { id: "foot.desktop" } })
+    DesktopEntries.testSetEntries({
+      foot: {
+        id: "foot.desktop"
+      }
+    })
     var workspace = makeWorkspace(5, [window], monitor)
     Hyprland.workspaces.values = [workspace]
     Hyprland.focusedWorkspace = workspace
 
-    var view = makeView({ refreshSettleMs: 10 })
+    var view = makeView({
+      refreshSettleMs: 10
+    })
     // Still stale the instant it opens - nothing has answered yet.
-    compare(view.capturedWindows[0].rect, { x: 0, y: 0, width: 0, height: 0 })
+    compare(view.capturedWindows[0].rect, {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    })
 
-    window.lastIpcObject = { "class": "foot", "at": [960, 0], "size": [960, 1080], "pid": 111, "floating": false, "fullscreen": 0 }
+    window.lastIpcObject = {
+      "class": "foot",
+      "at": [960, 0],
+      "size": [960, 1080],
+      "pid": 111,
+      "floating": false,
+      "fullscreen": 0
+    }
     wait(view.refreshSettleMs + 40)
     compare(view.capturedWindows.length, 1)
-    compare(view.capturedWindows[0].rect, { x: 0.5, y: 0, width: 0.5, height: 1 })
+    compare(view.capturedWindows[0].rect, {
+      x: 0.5,
+      y: 0,
+      width: 0.5,
+      height: 1
+    })
   }
 
   function test_refreshesWhenTheWorkspaceIdChanges() {
     var monitor = makeMonitor()
     DesktopEntries.testSetEntries({
-      firefox: { id: "firefox.desktop" },
-      code: { id: "code.desktop" }
+      firefox: {
+        id: "firefox.desktop"
+      },
+      code: {
+        id: "code.desktop"
+      }
     })
     var window5 = makeWindow("firefox", 111, [0, 0], [1920, 1080])
     var workspace5 = makeWorkspace(5, [window5], monitor)
@@ -243,7 +299,9 @@ TestCase {
     Hyprland.workspaces.values = [workspace5, workspace6]
     Hyprland.focusedWorkspace = workspace5
 
-    var view = makeView({ workspaceId: 5 })
+    var view = makeView({
+      workspaceId: 5
+    })
     compare(view.capturedWindows[0].class, "firefox")
 
     // The recapture is deferred (Qt.callLater), so it lands on a later
@@ -259,7 +317,9 @@ TestCase {
     oneMatchedWindow()
     var store = makeStore()
     fileOf(store).testSetMissing()
-    var view = makeView({ store: store })
+    var view = makeView({
+      store: store
+    })
 
     findChild(view, "nameField").accepted()
 
@@ -272,7 +332,9 @@ TestCase {
     oneMatchedWindow()
     var store = makeStore()
     fileOf(store).testSetMissing()
-    var view = makeView({ store: store })
+    var view = makeView({
+      store: store
+    })
 
     var field = findChild(view, "nameField")
     field.text = "Work"
@@ -288,7 +350,9 @@ TestCase {
     oneMatchedWindow()
     var store = makeStore()
     fileOf(store).testSetMissing()
-    var view = makeView({ store: store })
+    var view = makeView({
+      store: store
+    })
 
     var field = findChild(view, "nameField")
     field.text = "  Work  "
@@ -302,9 +366,31 @@ TestCase {
     var store = makeStore()
     fileOf(store).testSetContent(JSON.stringify({
       schemaVersion: 1,
-      setups: { Work: { windows: [{ recipe: { type: "desktop-entry", id: "x" }, class: "x", floating: false, fullscreen: false, rect: { x: 0, y: 0, width: 1, height: 1 } }] } }
+      setups: {
+        Work: {
+          windows: [
+            {
+              recipe: {
+                type: "desktop-entry",
+                id: "x"
+              },
+              class: "x",
+              floating: false,
+              fullscreen: false,
+              rect: {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1
+              }
+            }
+          ]
+        }
+      }
     }))
-    var view = makeView({ store: store })
+    var view = makeView({
+      store: store
+    })
 
     var field = findChild(view, "nameField")
     field.text = "Work"
@@ -326,9 +412,31 @@ TestCase {
     var store = makeStore()
     fileOf(store).testSetContent(JSON.stringify({
       schemaVersion: 1,
-      setups: { Work: { windows: [{ recipe: { type: "desktop-entry", id: "x" }, class: "x", floating: false, fullscreen: false, rect: { x: 0, y: 0, width: 1, height: 1 } }] } }
+      setups: {
+        Work: {
+          windows: [
+            {
+              recipe: {
+                type: "desktop-entry",
+                id: "x"
+              },
+              class: "x",
+              floating: false,
+              fullscreen: false,
+              rect: {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1
+              }
+            }
+          ]
+        }
+      }
     }))
-    var view = makeView({ store: store })
+    var view = makeView({
+      store: store
+    })
 
     var field = findChild(view, "nameField")
     field.text = "Work"
@@ -344,7 +452,9 @@ TestCase {
     var store = makeStore()
     fileOf(store).testSetMissing()
     findChild(store, "mkdirProcess").testExitCode = 1
-    var view = makeView({ store: store })
+    var view = makeView({
+      store: store
+    })
 
     var field = findChild(view, "nameField")
     field.text = "Work"
@@ -354,11 +464,102 @@ TestCase {
     verify(findChild(view, "saveErrorHint").visible)
   }
 
+  // ---- updating a setup you already have ----------------------------------
+
+  function twoSetupsStore() {
+    var store = makeStore()
+    var window = {
+      recipe: {
+        type: "desktop-entry",
+        id: "x"
+      },
+      class: "x",
+      floating: false,
+      fullscreen: false,
+      rect: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1
+      }
+    }
+    fileOf(store).testSetContent(JSON.stringify({
+      schemaVersion: 1,
+      setups: {
+        Zeta: {
+          windows: [window]
+        },
+        Alpha: {
+          windows: [window],
+          bootWorkspace: 3
+        }
+      }
+    }))
+    return store
+  }
+
+  function test_offersNothingToUpdateUntilSomethingIsSaved() {
+    oneMatchedWindow()
+    var view = makeView({
+      store: makeStore()
+    })
+    verify(!findChild(view, "updateTargets").visible)
+  }
+
+  function test_offersEverySavedSetupToUpdate() {
+    oneMatchedWindow()
+    var view = makeView({
+      store: twoSetupsStore()
+    })
+    verify(findChild(view, "updateTargets").visible)
+    compare(findChild(view, "updateTargetRepeater").count, 2)
+    // Sorted, like the overview's strip and the settings list.
+    compare(view.existingNames, ["Alpha", "Zeta"])
+  }
+
+  // Picking one fills the name in but stops at the confirmation: overwriting
+  // a setup is the one thing here that destroys something.
+  function test_pickingASetupToUpdateFillsTheNameAndAsksToConfirm() {
+    oneMatchedWindow()
+    var store = twoSetupsStore()
+    var view = makeView({
+      store: store
+    })
+
+    mouseClick(findChild(findChild(view, "updateTarget-Alpha"), "updateTargetMouseArea"))
+
+    compare(findChild(view, "nameField").text, "Alpha")
+    verify(view.confirmingOverwrite)
+    verify(findChild(view, "overwriteHint").visible)
+    compare(fileOf(store).testWrites.length, 0)
+  }
+
+  function test_confirmingAnUpdateWritesTheWorkspaceOverThatSetup() {
+    oneMatchedWindow()
+    var store = twoSetupsStore()
+    var view = makeView({
+      store: store
+    })
+
+    mouseClick(findChild(findChild(view, "updateTarget-Alpha"), "updateTargetMouseArea"))
+    findChild(view, "nameField").accepted()
+
+    compare(fileOf(store).testWrites.length, 1)
+    var written = JSON.parse(fileOf(store).testWrites[0])
+    // The picked setup now holds what is open right now...
+    compare(written.setups.Alpha.windows.length, 1)
+    compare(written.setups.Alpha.windows[0].class, "firefox")
+    // ...and the one that wasn't picked is untouched.
+    compare(written.setups.Zeta.windows[0].class, "x")
+  }
+
   // Opening the dialog fresh (becoming visible) clears whatever the last
   // save attempt left behind, so reopening it never shows stale state.
   function test_becomingVisibleResetsTheFormAndRecapturesTheWindows() {
     oneMatchedWindow()
-    var view = makeView({ visible: false })
+    var view = makeView({
+      visible: false
+    })
     var field = findChild(view, "nameField")
     field.text = "Work"
     field.accepted()
