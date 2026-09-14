@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "better-workspaces",
   "name": "Better Workspaces",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "LukasTrust",
   "license": "MIT",
   "description": "Workspace indicators showing a per-window app icon, plus a full-screen overview to drag windows between workspaces and save/restore whole workspace setups (with optional boot-time restore).",
