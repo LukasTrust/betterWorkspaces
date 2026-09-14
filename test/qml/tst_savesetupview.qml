@@ -188,6 +188,45 @@ TestCase {
     compare(view.capturedWindows.length, 1)
   }
 
+  // ---- refreshing geometry on open -------------------------------------------
+
+  // Opening this dialog is one of the two places (the other is the overview)
+  // that ever asks Hyprland for fresh `hyprctl clients` data - a window
+  // Quickshell hasn't heard an update for since the shell started still
+  // needs it, and reaching this dialog through the direct `'{"view":"save"}'`
+  // trigger skips the overview's own refresh entirely.
+  function test_openingAsksHyprlandForFreshGeometry() {
+    oneMatchedWindow()
+    var before = Hyprland.testToplevelRefreshes
+    makeView()
+    compare(Hyprland.testToplevelRefreshes, before + 1)
+  }
+
+  // The refresh itself is async - Hyprland's reply lands some time after
+  // `refreshToplevels()` returns, updating each toplevel's `lastIpcObject`
+  // whenever it does. A window still showing empty geometry the instant the
+  // dialog opens (nothing pushed an update since the shell started, e.g. a
+  // terminal nobody has touched) would otherwise end up with a zero rect and
+  // be invisible in the preview forever - the capture is redone once more a
+  // short settle after open, by which point a same-tick reply has arrived.
+  function test_aWindowWithStaleGeometryIsCapturedAgainOnceHyprlandReplies() {
+    var monitor = makeMonitor()
+    var window = makeWindow("foot", 111, [0, 0], [0, 0])
+    DesktopEntries.testSetEntries({ foot: { id: "foot.desktop" } })
+    var workspace = makeWorkspace(5, [window], monitor)
+    Hyprland.workspaces.values = [workspace]
+    Hyprland.focusedWorkspace = workspace
+
+    var view = makeView({ refreshSettleMs: 10 })
+    // Still stale the instant it opens - nothing has answered yet.
+    compare(view.capturedWindows[0].rect, { x: 0, y: 0, width: 0, height: 0 })
+
+    window.lastIpcObject = { "class": "foot", "at": [960, 0], "size": [960, 1080], "pid": 111, "floating": false, "fullscreen": 0 }
+    wait(view.refreshSettleMs + 40)
+    compare(view.capturedWindows.length, 1)
+    compare(view.capturedWindows[0].rect, { x: 0.5, y: 0, width: 0.5, height: 1 })
+  }
+
   function test_refreshesWhenTheWorkspaceIdChanges() {
     var monitor = makeMonitor()
     DesktopEntries.testSetEntries({

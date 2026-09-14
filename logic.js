@@ -561,29 +561,35 @@ function widgetSettingsFrom(barConfig, pluginId) {
 }
 
 // What the overlay shows, from the payload it was summoned with. `base` is
-// the view that owns the surface; `settingsOpen` says whether the settings
-// card is on top of it. Asking for the settings directly opens them on their
-// own, with no overview behind - that is the difference Escape turns on.
+// the view that owns the surface; `settingsOpen`/`saveOpen` say whether that
+// card is on top of it. Asking for the settings or the save dialog directly
+// opens them on their own, with no overview behind - that is the difference
+// Escape turns on.
 function overlayState(payloadJson) {
   var view = parseOverlayPayload(payloadJson).view
+  var settingsOpen = view === "settings"
+  var saveOpen = view === "save"
   return {
-    base: view === "settings" ? "settings" : "overview",
-    settingsOpen: view === "settings"
+    base: settingsOpen ? "settings" : (saveOpen ? "save" : "overview"),
+    settingsOpen: settingsOpen,
+    saveOpen: saveOpen
   }
 }
 
 // What Escape (or a click on the backdrop) does next. Reaching the settings
-// through the overview's gear is a step in, so the first Escape is a step
-// back out to the overview rather than closing everything - the settings
-// change what the overview shows, and going back is how you see it.
-function overlayEscape(base, settingsOpen) {
-  return settingsOpen && base === "overview" ? "back" : "close"
+// or the save dialog through the overview (its gear, or a card's own save
+// button) is a step in, so the first Escape is a step back out to the
+// overview rather than closing everything - both cards change what the
+// overview shows, and going back is how you see it.
+function overlayEscape(base, cardOpen) {
+  return cardOpen && base === "overview" ? "back" : "close"
 }
 
 // One overlay serves every summonable view of this plugin, so the payload
 // picks which one. A bare `{}` - what the documented toggle command and the
-// bar click both send - means the overview; the settings form has to be
-// asked for by name. Anything unreadable falls back to the overview too.
+// bar click both send - means the overview; the settings form and the save
+// dialog (for whichever workspace is focused) have to be asked for by name.
+// Anything unreadable falls back to the overview too.
 function parseOverlayPayload(payloadJson) {
   var view = "overview"
   try {
@@ -725,6 +731,45 @@ function assignBootWorkspace(setups, name, workspaceId) {
   }
   if (next[name]) next[name].bootWorkspace = target > 0 ? target : null
   return next
+}
+
+// ---- opening setups at boot -------------------------------------------------
+
+// Whether the boot service should actually run: only once per Hyprland
+// session, so `omarchy restart shell` (which restarts this service along
+// with everything else) doesn't reopen every boot setup a second time. The
+// guard file holds the signature of whichever session already ran it; a
+// session with no signature at all (Hyprland not actually running yet, or
+// the env var missing) never runs rather than guessing.
+function shouldRunBoot(guardContent, signature) {
+  var sig = String(signature || "")
+  if (!sig) return false
+  return String(guardContent || "") !== sig
+}
+
+// Which setups to open at boot, and in what order: every setup with a valid
+// `bootWorkspace` (1-10), lowest workspace first so a multi-monitor layout
+// fills in a stable order. `assignBootWorkspace` already keeps this
+// one-setup-per-workspace, but the file is hand-editable, so a duplicate is
+// still resolved here rather than opening two setups onto the same
+// workspace - alphabetically first name wins, same tie-break `setupNames`
+// already uses elsewhere.
+function bootEntries(setups) {
+  var all = setups || {}
+  var names = Object.keys(all).sort()
+  var seenWorkspace = {}
+  var entries = []
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i]
+    var entry = all[name] || {}
+    var workspaceId = entry.bootWorkspace
+    if (typeof workspaceId !== "number" || workspaceId < 1 || workspaceId > 10) continue
+    if (seenWorkspace[workspaceId]) continue
+    seenWorkspace[workspaceId] = true
+    entries.push({ name: name, workspaceId: workspaceId })
+  }
+  entries.sort(function (a, b) { return a.workspaceId - b.workspaceId })
+  return entries
 }
 
 // ---- capturing what is open right now --------------------------------------
@@ -1110,6 +1155,8 @@ if (typeof module !== "undefined" && module.exports) {
     validateSetupFile: validateSetupFile,
     planSetupOpen: planSetupOpen,
     assignBootWorkspace: assignBootWorkspace,
+    shouldRunBoot: shouldRunBoot,
+    bootEntries: bootEntries,
     relativeRect: relativeRect,
     captureSetupWindows: captureSetupWindows,
     parseProcCmdline: parseProcCmdline,

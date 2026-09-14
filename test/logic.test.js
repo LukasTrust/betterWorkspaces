@@ -38,7 +38,9 @@ const {
   splitTreeSteps,
   absoluteRect,
   planOpenSetup,
-  assignBootWorkspace
+  assignBootWorkspace,
+  shouldRunBoot,
+  bootEntries
 } = require("../logic.js")
 
 // The shape Workspaces.qml hands computeWorkspaceIds: what Hyprland knows
@@ -342,10 +344,11 @@ test("parseOverlayPayload picks the view, defaulting to the overview", () => {
   assert.deepEqual(parseOverlayPayload('{"view":42}'), { view: "overview" })
 })
 
-test("overlayState opens the overview, or the settings on their own", () => {
-  assert.deepEqual(overlayState("{}"), { base: "overview", settingsOpen: false })
-  assert.deepEqual(overlayState('{"view":"settings"}'), { base: "settings", settingsOpen: true })
-  assert.deepEqual(overlayState("not json"), { base: "overview", settingsOpen: false })
+test("overlayState opens the overview, or the settings/save dialog on their own", () => {
+  assert.deepEqual(overlayState("{}"), { base: "overview", settingsOpen: false, saveOpen: false })
+  assert.deepEqual(overlayState('{"view":"settings"}'), { base: "settings", settingsOpen: true, saveOpen: false })
+  assert.deepEqual(overlayState('{"view":"save"}'), { base: "save", settingsOpen: false, saveOpen: true })
+  assert.deepEqual(overlayState("not json"), { base: "overview", settingsOpen: false, saveOpen: false })
 })
 
 test("overlayEscape steps back to the overview, or closes", () => {
@@ -799,6 +802,52 @@ test("assignBootWorkspace leaves every other field of the changed entries alone"
 test("assignBootWorkspace copes with an unknown setup name and an empty store", () => {
   assert.deepEqual(assignBootWorkspace({}, "Ghost", 3), {})
   assert.deepEqual(assignBootWorkspace(null, "Ghost", 3), {})
+})
+
+// ---- opening setups at boot --------------------------------------------------
+
+test("shouldRunBoot runs once per signature, never with no signature at all", () => {
+  assert.equal(shouldRunBoot("", "sig-a"), true)
+  assert.equal(shouldRunBoot("sig-b", "sig-a"), true)
+  assert.equal(shouldRunBoot("sig-a", "sig-a"), false)
+  assert.equal(shouldRunBoot("", ""), false)
+  assert.equal(shouldRunBoot("sig-a", ""), false)
+  assert.equal(shouldRunBoot(null, "sig-a"), true)
+})
+
+test("bootEntries picks the setups with a valid boot workspace, lowest first", () => {
+  const setups = {
+    Games: { windows: [], bootWorkspace: 5 },
+    Work: { windows: [], bootWorkspace: 1 },
+    Scratch: { windows: [], bootWorkspace: null },
+    Chat: { windows: [] }
+  }
+  assert.deepEqual(bootEntries(setups), [
+    { name: "Work", workspaceId: 1 },
+    { name: "Games", workspaceId: 5 }
+  ])
+})
+
+test("bootEntries ignores an out-of-range or non-numeric boot workspace", () => {
+  const setups = {
+    A: { windows: [], bootWorkspace: 0 },
+    B: { windows: [], bootWorkspace: 11 },
+    C: { windows: [], bootWorkspace: "3" }
+  }
+  assert.deepEqual(bootEntries(setups), [])
+})
+
+test("bootEntries resolves a hand-edited duplicate workspace alphabetically", () => {
+  const setups = {
+    Zeta: { windows: [], bootWorkspace: 2 },
+    Alpha: { windows: [], bootWorkspace: 2 }
+  }
+  assert.deepEqual(bootEntries(setups), [{ name: "Alpha", workspaceId: 2 }])
+})
+
+test("bootEntries copes with nothing to open", () => {
+  assert.deepEqual(bootEntries({}), [])
+  assert.deepEqual(bootEntries(null), [])
 })
 
 // ---- capturing what is open right now ---------------------------------------

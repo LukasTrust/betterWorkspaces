@@ -12,9 +12,11 @@ import "logic.js" as Logic
 //
 //   omarchy-shell shell toggle better-workspaces '{}'
 //   omarchy-shell shell toggle better-workspaces '{"view":"settings"}'
+//   omarchy-shell shell toggle better-workspaces '{"view":"save"}'
 //
-// Kept thin on purpose - both views (SettingsView.qml, Overview.qml) have no
-// window of their own and so can be tested headless.
+// The save view saves the focused workspace on its own, no overview needed.
+// Kept thin on purpose - every view (SettingsView.qml, Overview.qml,
+// SaveSetupView.qml) has no window of its own and so can be tested headless.
 Item {
   id: root
 
@@ -23,16 +25,21 @@ Item {
 
   property bool opened: false
   // The view that owns the surface, and whether a card sits on top of it:
-  // the settings (reached through the overview's gear) or the save dialog
-  // (reached through a workspace's own save button). Both keep the overview
-  // underneath, suspended - either one changes what it's showing.
+  // the settings (reached through the overview's gear, or summoned
+  // directly) or the save dialog (reached through a workspace's own save
+  // button, or summoned directly for whichever workspace is focused). Both
+  // keep the overview underneath, suspended - either one changes what it's
+  // showing, unless it was summoned on its own.
   property string view: "overview"
   property bool settingsOpen: false
-  // > 0 while the save dialog is up, naming which workspace it's for - a
-  // workspace's own button, not necessarily the focused one.
+  property bool saveOpen: false
+  // Which workspace the save dialog is for - a workspace's own button
+  // passes its real id, since the one clicked isn't necessarily the one
+  // you're on; summoned directly it stays 0, and SaveSetupView falls back
+  // to whatever is focused.
   property int saveWorkspaceId: 0
 
-  readonly property bool cardOpen: root.settingsOpen || root.saveWorkspaceId > 0
+  readonly property bool cardOpen: root.settingsOpen || root.saveOpen
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "better-workspaces"
   readonly property var widgetSettings: Logic.widgetSettingsFrom(root.shell ? root.shell.barConfig : null, root.pluginId)
@@ -41,6 +48,7 @@ Item {
     var state = Logic.overlayState(payloadJson)
     root.view = state.base
     root.settingsOpen = state.settingsOpen
+    root.saveOpen = state.saveOpen
     root.saveWorkspaceId = 0
     root.opened = true
     Qt.callLater(function () {
@@ -54,6 +62,7 @@ Item {
   function stepBack() {
     if (Logic.overlayEscape(root.view, root.cardOpen) === "back") {
       root.settingsOpen = false
+      root.saveOpen = false
       root.saveWorkspaceId = 0
       return
     }
@@ -61,6 +70,7 @@ Item {
   }
 
   function openSettings() {
+    root.saveOpen = false
     root.saveWorkspaceId = 0
     root.settingsOpen = true
     Qt.callLater(function () {
@@ -70,6 +80,7 @@ Item {
 
   function openSave(workspaceId) {
     root.settingsOpen = false
+    root.saveOpen = true
     root.saveWorkspaceId = workspaceId
     Qt.callLater(function () {
       keyCatcher.forceActiveFocus()
@@ -79,12 +90,14 @@ Item {
   function close() {
     root.opened = false
     root.settingsOpen = false
+    root.saveOpen = false
     root.saveWorkspaceId = 0
   }
 
   function dismiss() {
     root.opened = false
     root.settingsOpen = false
+    root.saveOpen = false
     root.saveWorkspaceId = 0
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide(root.pluginId)
@@ -96,6 +109,12 @@ Item {
     else
       root.open("{}")
   }
+
+  // Which workspace the save dialog is actually showing - `saveWorkspaceId`
+  // itself stays 0 when summoned directly, with SaveSetupView resolving the
+  // focused workspace on its own; the title needs that same number.
+  readonly property int resolvedSaveWorkspaceId: root.saveWorkspaceId > 0 ? root.saveWorkspaceId
+    : (Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
 
   // The screen Hyprland says has focus, so the overview opens where you are
   // rather than on whichever monitor Quickshell happens to list first.
@@ -129,7 +148,7 @@ Item {
     // fires for a future delete from the overview's setups list, which
     // shouldn't close whatever else happens to be on top at the time.
     function onCommitted() {
-      if (root.saveWorkspaceId > 0)
+      if (root.saveOpen)
         root.stepBack()
     }
   }
@@ -232,7 +251,7 @@ Item {
         Text {
           objectName: "overlayTitle"
           textFormat: Text.PlainText
-          text: root.saveWorkspaceId > 0 ? "Save workspace " + (root.saveWorkspaceId === 10 ? "0" : root.saveWorkspaceId) : "Better Workspaces"
+          text: root.saveOpen ? "Save workspace " + (root.resolvedSaveWorkspaceId === 10 ? "0" : root.resolvedSaveWorkspaceId) : "Better Workspaces"
           color: Color.menu.text
           font.family: Style.font.family
           font.pixelSize: Style.font.title
@@ -251,7 +270,7 @@ Item {
 
         SaveSetupView {
           objectName: "saveSetupView"
-          visible: root.saveWorkspaceId > 0
+          visible: root.saveOpen
           width: content.width
           height: visible ? implicitHeight : 0
           settings: root.widgetSettings
@@ -262,7 +281,7 @@ Item {
         Text {
           objectName: "overlayHint"
           textFormat: Text.PlainText
-          text: root.saveWorkspaceId > 0 ? "Enter saves - Esc goes back to the overview"
+          text: root.saveOpen ? "Enter saves - Esc " + (root.view === "overview" ? "goes back to the overview" : "closes")
             : (root.view === "overview" ? "Changes apply immediately - Esc goes back to the overview" : "Changes apply immediately - Esc closes")
           color: Color.menu.text
           opacity: 0.7

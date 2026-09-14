@@ -15,10 +15,11 @@ const root = path.join(__dirname, "..")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"))
 const barWidget = manifest.barWidget ?? {}
 
-test("declares a bar widget and the overlay that edits its settings", () => {
-  assert.deepEqual(manifest.kinds, ["bar-widget", "overlay"])
+test("declares a bar widget, the overlay that edits its settings, and the boot service", () => {
+  assert.deepEqual(manifest.kinds, ["bar-widget", "overlay", "service"])
   assert.equal(manifest.entryPoints.barWidget, "Workspaces.qml")
   assert.equal(manifest.entryPoints.overlay, "Overlay.qml")
+  assert.equal(manifest.entryPoints.service, "Service.qml")
 })
 
 test("every declared entry point exists", () => {

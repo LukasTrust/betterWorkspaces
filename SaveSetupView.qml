@@ -158,10 +158,32 @@ Item {
 
   // Called when the dialog appears - a fresh name field and a fresh
   // snapshot of whatever is open right now.
+  //
+  // A window's geometry (`lastIpcObject`) only updates in Quickshell when
+  // Hyprland actually pushes an event for it - focus, move, resize. A
+  // window that has sat untouched since the shell started (easy to hit via
+  // the direct `'{"view":"save"}'` trigger, which - unlike the overview -
+  // never asked Hyprland for anything before this dialog opened) can still
+  // be showing empty geometry, so it's invisible in the preview (a null
+  // `cardWindowRect`) and has no rect worth saving. `refreshToplevels()`
+  // asks for everyone's current geometry; the reply is async, so the
+  // capture is redone once more after a short settle rather than trusting
+  // whatever was already there the instant this ran.
   function open() {
     root.reset()
+    Hyprland.refreshToplevels()
     root.refreshCapture()
+    refreshSettleTimer.restart()
   }
+
+  Timer {
+    id: refreshSettleTimer
+    objectName: "refreshSettleTimer"
+    interval: root.refreshSettleMs
+    onTriggered: if (root.visible) root.refreshCapture()
+  }
+
+  property int refreshSettleMs: 150
 
   Component.onCompleted: root.open()
   onVisibleChanged: if (root.visible) root.open()

@@ -930,6 +930,160 @@ TestCase {
     verify(Object.keys(store.setups).indexOf("Work") !== -1)
   }
 
+  // ---- assigning a setup's boot workspace from its chip ----------------------
+
+  function test_bootButtonFallsBackToARocketCharacterWhileOff() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+
+    var chip = chipFor(view, "Work")
+    verify(findChild(chip, "bootGlyph").visible)
+    compare(findChild(chip, "bootGlyph").text, "🚀")
+    verify(!findChild(chip, "bootIcon").visible)
+    verify(!findChild(chip, "bootNumber").visible)
+  }
+
+  function test_bootButtonShowsAThemedIconWhileOff() {
+    Quickshell.testThemeIcons = {
+      "application-x-executable": "image://test/application-x-executable",
+      "system-run": "image://test/system-run"
+    }
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+
+    var chip = chipFor(view, "Work")
+    verify(findChild(chip, "bootIcon").visible)
+    compare(findChild(chip, "bootIcon").source, "image://test/system-run")
+    verify(!findChild(chip, "bootGlyph").visible)
+  }
+
+  // Workspace 10 shows as "0" everywhere else in this widget - the boot
+  // button follows the same convention rather than showing the raw id.
+  function test_bootButtonShowsTheAssignedWorkspaceNumber() {
+    threeWorkspaces()
+    var store = makeStore({ Work: { windows: anArgvSetup(["some-tool"]).windows, bootWorkspace: 10 } })
+    var view = createOverview({}, { store: store })
+
+    var chip = chipFor(view, "Work")
+    verify(findChild(chip, "bootNumber").visible)
+    compare(findChild(chip, "bootNumber").text, "0")
+    verify(!findChild(chip, "bootGlyph").visible)
+    verify(!findChild(chip, "bootIcon").visible)
+  }
+
+  function test_clickingTheBootButtonOpensAPickerWithOffAndEveryWorkspace() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+    var chip = chipFor(view, "Work")
+
+    verify(!findChild(chip, "setupBootPopover").visible)
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+    verify(findChild(chip, "setupBootPopover").visible)
+    compare(findChild(chip, "setupBootOptionRepeater").count, 11)
+  }
+
+  function test_pickingAWorkspaceAssignsBootAndClosesThePicker() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+    var chip = chipFor(view, "Work")
+
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+    mouseClick(findChild(chip, "setupBootOption-5"))
+
+    compare(store.setups.Work.bootWorkspace, 5)
+    verify(!findChild(chip, "setupBootPopover").visible)
+  }
+
+  function test_pickingOffClearsAnExistingBootAssignment() {
+    threeWorkspaces()
+    var store = makeStore({ Work: { windows: anArgvSetup(["some-tool"]).windows, bootWorkspace: 4 } })
+    var view = createOverview({}, { store: store })
+    var chip = chipFor(view, "Work")
+
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+    mouseClick(findChild(chip, "setupBootOption-0"))
+
+    compare(store.setups.Work.bootWorkspace, null)
+  }
+
+  // Assigning a workspace another setup already had takes it away from that
+  // one - same rule the settings form's boot section already follows
+  // (`Logic.assignBootWorkspace`), reused here rather than re-implemented.
+  function test_assigningAWorkspaceAlreadyTakenTakesItFromTheOtherSetup() {
+    threeWorkspaces()
+    var store = makeStore({
+      Work: { windows: anArgvSetup(["work"]).windows, bootWorkspace: 3 },
+      Games: { windows: anArgvSetup(["games"]).windows }
+    })
+    var view = createOverview({}, { store: store })
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-3"))
+
+    compare(store.setups.Games.bootWorkspace, 3)
+    compare(store.setups.Work.bootWorkspace, null)
+  }
+
+  // Only one picker at a time - opening another chip's closes whichever was
+  // already up, same as the settings/save cards only ever show one at once.
+  function test_openingAnotherChipsPickerClosesTheFirst() {
+    threeWorkspaces()
+    var store = makeStore({ Games: anArgvSetup(["games"]), Work: anArgvSetup(["work"]) })
+    var view = createOverview({}, { store: store })
+
+    mouseClick(findChild(chipFor(view, "Work"), "setupBootMouseArea"))
+    verify(findChild(chipFor(view, "Work"), "setupBootPopover").visible)
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    verify(!findChild(chipFor(view, "Work"), "setupBootPopover").visible)
+    verify(findChild(chipFor(view, "Games"), "setupBootPopover").visible)
+  }
+
+  function test_clickingTheBootButtonAgainClosesItsOwnPicker() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+    var chip = chipFor(view, "Work")
+
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+
+    verify(!findChild(chip, "setupBootPopover").visible)
+  }
+
+  // Clicking anywhere else dismisses the picker without touching the
+  // assignment - same pattern as the settings/save card's own backdrop.
+  function test_clickingOutsideClosesThePickerWithoutChangingTheAssignment() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+    var chip = chipFor(view, "Work")
+
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+    mouseClick(findChild(view, "bootPopoverDismissArea"))
+
+    verify(!findChild(chip, "setupBootPopover").visible)
+    compare(store.setups.Work.bootWorkspace, undefined)
+  }
+
+  // Clicking inside the picker itself must not fall through to the dismiss
+  // layer behind it and close it before the option click registers.
+  function test_thePickerSwallowsClicksOnItsOwnSurface() {
+    threeWorkspaces()
+    var store = makeStore({ Work: anArgvSetup(["some-tool"]) })
+    var view = createOverview({}, { store: store })
+    var chip = chipFor(view, "Work")
+
+    mouseClick(findChild(chip, "setupBootMouseArea"))
+    mouseClick(findChild(chip, "setupBootPopover"))
+
+    verify(findChild(chip, "setupBootPopover").visible)
+  }
+
   // With the settings card over it the overview stays on screen, previews
   // and all, but must not act on anything behind the form.
   function test_suspendedStopsTakingClicksAndKeys() {

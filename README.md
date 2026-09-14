@@ -106,6 +106,19 @@ again, as do `Esc` and a click past the cards.
   open windows, ready to reopen later. Not necessarily the one you're on:
   each card saves itself. Same `Esc`-goes-back behaviour as the gear.
 
+To save the workspace you're on right now without opening the overview at
+all, bind a key of your own in `~/.config/hypr/bindings.lua`. `SUPER + SHIFT
++ Q` is free in a stock Omarchy:
+
+```lua
+o.bind("SUPER + SHIFT + Q", "Save current workspace",
+  [[omarchy-shell shell toggle better-workspaces '{"view":"save"}']])
+```
+
+This opens straight on the save dialog for whichever workspace is focused;
+`Esc` or a click outside it closes it right away, with no overview behind it
+to step back to.
+
 ### Saved setups
 
 Once you've saved at least one, a strip of them sits along the bottom of the
@@ -126,6 +139,11 @@ overview - a small icon per app plus the name.
   normal close request (never a kill), so an app that wants to ask "save
   changes?" still gets to.
 - **The × in a chip's corner** deletes it, after asking you to confirm.
+- **The button in the chip's other corner** assigns which workspace it opens
+  on at boot (see below) - a click opens a small picker of "off" plus every
+  workspace, right there, without going through the settings form. The
+  button itself shows that workspace's number, or a themed icon (with a
+  glyph fallback) while it's off.
 
 Reopening a setup replays each window's own launch recipe (its installed
 app, or the exact command line if it isn't one) and rebuilds the left/right,
@@ -198,10 +216,17 @@ there through the overview's gear, steps back to the overview so you can see
 what your change did.
 
 Below the settings, once you've saved at least one setup, is a field per
-setup for which workspace it should open on at boot (`0` for none - not yet
-acted on; opening automatically at boot isn't implemented yet, this only
-records the assignment). Giving one a workspace another setup already had
-takes it away from that one - only one setup can claim a given workspace.
+setup for which workspace it should open on at boot (`0` for none) - the same
+assignment each setup's own chip in the overview lets you make directly (see
+above), just listed all in one place here. Giving one a workspace another
+setup already had takes it away from that one - only one setup can claim a
+given workspace.
+
+Any setup with a boot workspace assigned opens automatically once, the first
+time Hyprland starts - after waiting for every monitor to be detected, so a
+multi-monitor layout doesn't land on the wrong screen. It only runs once per
+Hyprland session: `omarchy restart shell` (or anything else that restarts
+this plugin) won't reopen everything a second time.
 
 ### shell.json
 

@@ -148,6 +148,22 @@ Item {
     root.pendingDeleteName = ""
   }
 
+  // ---- assigning a setup's boot workspace ------------------------------------
+
+  // Which setup's boot picker is open, if any - one at a time, name-keyed so
+  // opening another chip's closes whichever was already up.
+  property string bootPopoverFor: ""
+
+  function toggleBootPopover(name) {
+    root.bootPopoverFor = root.bootPopoverFor === name ? "" : name
+  }
+
+  function setBootWorkspace(name, workspaceId) {
+    if (root.store)
+      root.store.replaceAll(Logic.assignBootWorkspace(root.store.setups, name, workspaceId))
+    root.bootPopoverFor = ""
+  }
+
   // ---- what Hyprland has --------------------------------------------------
 
   function workspaceById(id) {
@@ -475,6 +491,11 @@ Item {
   readonly property var saveIcon: {
     var themed = Quickshell.iconPath("document-save", true)
     return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\ud83d\udcbe" }
+  }
+
+  readonly property var bootIcon: {
+    var themed = Quickshell.iconPath("system-run", true)
+    return themed.length > 0 ? { kind: "image", source: themed } : { kind: "text", value: "\ud83d\ude80" }
   }
 
   // Omarchy keeps a symlink pointing at the background in use; following it
@@ -997,6 +1018,20 @@ Item {
       }
     }
 
+    // Closes whichever boot picker is open on a click anywhere else. Declared
+    // before the strip (and so painted, and hit-tested, under it) so a click
+    // on a chip's own controls - including the picker's own surface, which
+    // has its own click-swallowing MouseArea - reaches those instead of
+    // closing the picker out from under it; same ordering Overlay.qml uses
+    // for the settings/save card's backdrop.
+    MouseArea {
+      objectName: "bootPopoverDismissArea"
+      anchors.fill: parent
+      visible: root.bootPopoverFor.length > 0
+      enabled: visible
+      onClicked: root.bootPopoverFor = ""
+    }
+
     // A row of saved setups along the bottom, each draggable onto a
     // workspace card or "+". Only takes screen space once something is
     // actually saved.
@@ -1035,6 +1070,8 @@ Item {
                 list.push(windows[i].class)
               return list
             }
+            readonly property int bootWorkspace: (chipSlot.setupEntry && chipSlot.setupEntry.bootWorkspace) || 0
+            readonly property bool bootPopoverOpen: root.bootPopoverFor === chipSlot.modelData
 
             // The thing that actually moves under the pointer while
             // dragging; the slot itself stays put, same pattern as a
@@ -1168,6 +1205,134 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.requestDeleteSetup(chipSlot.modelData)
+              }
+            }
+
+            // Mirrors the delete button on the opposite corner - shows the
+            // workspace this setup opens on at boot, or a themed icon (with
+            // a glyph fallback, same reasoning as the gear/save icons) while
+            // it's off. Opens a picker instead of cycling through values
+            // itself: which workspace to boot onto isn't a two-state thing.
+            Rectangle {
+              id: bootButton
+              objectName: "setupBootButton"
+              anchors.top: parent.top
+              anchors.left: parent.left
+              anchors.margins: Style.space(4)
+              width: Style.space(20)
+              height: Style.space(20)
+              radius: width / 2
+              color: chipSlot.bootPopoverOpen ? Color.accent : (bootArea.containsMouse ? Color.bar.active : Color.menu.background)
+              border.width: Math.max(1, Style.space(1))
+              border.color: Color.menu.border
+
+              IconImage {
+                objectName: "bootIcon"
+                anchors.fill: parent
+                anchors.margins: Style.space(3)
+                asynchronous: true
+                visible: chipSlot.bootWorkspace === 0 && root.bootIcon.kind === "image"
+                source: chipSlot.bootWorkspace === 0 && root.bootIcon.kind === "image" ? root.bootIcon.source : ""
+              }
+
+              // A Nerd Font glyph would silently render as a tofu box on a
+              // theme font that doesn't carry one - same reasoning as the
+              // gear/save icons.
+              Text {
+                objectName: "bootGlyph"
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                visible: chipSlot.bootWorkspace === 0 && root.bootIcon.kind === "text"
+                text: root.bootIcon.kind === "text" ? root.bootIcon.value : ""
+                color: chipSlot.bootPopoverOpen ? Color.menu.background : Color.menu.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
+                objectName: "bootNumber"
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                visible: chipSlot.bootWorkspace > 0
+                text: chipSlot.bootWorkspace === 10 ? "0" : String(chipSlot.bootWorkspace)
+                color: chipSlot.bootPopoverOpen ? Color.menu.background : Color.menu.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                id: bootArea
+                objectName: "setupBootMouseArea"
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.toggleBootPopover(chipSlot.modelData)
+              }
+            }
+
+            // The picker itself: "off" plus every workspace, above the chip
+            // so it has room regardless of how full the card area below is.
+            Rectangle {
+              id: bootPopover
+              objectName: "setupBootPopover"
+              visible: chipSlot.bootPopoverOpen
+              z: 50
+              anchors.bottom: chipSlot.top
+              anchors.horizontalCenter: chipSlot.horizontalCenter
+              anchors.bottomMargin: Style.space(6)
+              width: bootGrid.implicitWidth + Style.spacing.panelPadding
+              height: bootGrid.implicitHeight + Style.spacing.panelPadding
+              radius: Style.cornerRadius
+              color: Color.menu.background
+              border.width: Math.max(1, Style.space(2))
+              border.color: Color.menu.border
+
+              // Clicks inside must not reach the dismiss layer behind it.
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {}
+              }
+
+              Grid {
+                id: bootGrid
+                objectName: "setupBootGrid"
+                anchors.centerIn: parent
+                columns: 4
+                spacing: Style.spacing.xs
+
+                Repeater {
+                  objectName: "setupBootOptionRepeater"
+                  model: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+                  Rectangle {
+                    id: bootOption
+                    objectName: "setupBootOption-" + bootOption.modelData
+                    required property int modelData
+                    readonly property bool selected: chipSlot.bootWorkspace === bootOption.modelData
+
+                    width: Style.space(26)
+                    height: Style.space(26)
+                    radius: Style.cornerRadius
+                    color: bootOption.selected ? Color.accent : "transparent"
+                    border.width: Math.max(1, Style.space(1))
+                    border.color: bootOption.selected ? Color.accent : Color.menu.border
+
+                    Text {
+                      anchors.centerIn: parent
+                      textFormat: Text.PlainText
+                      text: bootOption.modelData === 0 ? "off" : (bootOption.modelData === 10 ? "0" : String(bootOption.modelData))
+                      color: bootOption.selected ? Color.menu.background : Color.menu.text
+                      font.family: Style.font.family
+                      font.pixelSize: Style.font.caption
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.setBootWorkspace(chipSlot.modelData, bootOption.modelData)
+                    }
+                  }
+                }
               }
             }
           }
