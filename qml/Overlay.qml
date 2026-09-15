@@ -43,7 +43,18 @@ Item {
   readonly property bool cardOpen: root.settingsOpen || root.saveOpen
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "better-workspaces"
-  readonly property var widgetSettings: Settings.widgetSettingsFrom(root.shell ? root.shell.barConfig : null, root.pluginId)
+  // What shell.json holds for this widget, as the shell last handed it over.
+  readonly property var configuredSettings: Settings.widgetSettingsFrom(root.shell ? root.shell.barConfig : null, root.pluginId)
+  // The entry the settings form just wrote. The bar picks a write up as
+  // soon as the shell applies it, but this overlay only sees it once the
+  // shell pushes a fresh `barConfig` to its plugin API - which can lag
+  // behind, leaving the overview's cards on the old labels while the bar
+  // already shows the new ones. So a write from this form applies here
+  // straight away, and gives way the moment the shell's own copy changes -
+  // a hand edit to shell.json, or Setup > Plugins, still wins.
+  property var writtenSettings: null
+  onConfiguredSettingsChanged: root.writtenSettings = null
+  readonly property var widgetSettings: root.writtenSettings || root.configuredSettings
 
   function open(payloadJson) {
     var state = Views.overlayState(payloadJson)
@@ -269,13 +280,14 @@ Item {
           Text {
             objectName: "overlayTitle"
             textFormat: Text.PlainText
-            text: root.saveOpen ? "Save workspace " + (root.resolvedSaveWorkspaceId === 10 ? "0" : root.resolvedSaveWorkspaceId) : "Better Workspaces"
+            text: root.saveOpen ? "Save workspace " + Settings.workspaceLabel(root.resolvedSaveWorkspaceId, Settings.settingValue(root.widgetSettings, "workspaceLabels")) : "Better Workspaces"
             color: Color.menu.text
             font.family: Style.font.family
             font.pixelSize: Style.font.title
           }
 
           SettingsView {
+            id: settingsView
             objectName: "settingsView"
             visible: root.settingsOpen
             width: content.width
@@ -284,6 +296,15 @@ Item {
             pluginId: root.pluginId
             settings: root.widgetSettings
             store: setupStore
+            // Deferred past the write's own barConfig update, so a shell
+            // that does apply it immediately doesn't clear this right after
+            // it is set.
+            onSettingChanged: {
+              var written = settingsView.settings
+              Qt.callLater(function () {
+                root.writtenSettings = written
+              })
+            }
           }
 
           SaveSetupView {

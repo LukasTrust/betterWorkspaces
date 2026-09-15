@@ -275,6 +275,29 @@ TestCase {
     compare(findChild(cellFor(widget, 3), "workspaceLabel").text, "3")
   }
 
+  function test_labelsWorkspacesFromTheLabelList() {
+    Hyprland.workspaces.values = [makeWorkspace(10)]
+    var widget = createWidget({
+      workspaceLabels: "a, 1,$"
+    })
+    compare(findChild(cellFor(widget, 1), "workspaceLabel").text, "a")
+    compare(findChild(cellFor(widget, 2), "workspaceLabel").text, "1")
+    compare(findChild(cellFor(widget, 3), "workspaceLabel").text, "$")
+    compare(findChild(cellFor(widget, 4), "workspaceLabel").text, "4")
+    compare(findChild(cellFor(widget, 10), "workspaceLabel").text, "0")
+    compare(stateOf(widget).workspaces[0].label, "a")
+  }
+
+  function test_clearedLabelsGoBackToNumbers() {
+    for (var value of ["", "   ", ", ,", null]) {
+      var widget = createWidget({
+        workspaceLabels: value
+      })
+      compare(findChild(cellFor(widget, 1), "workspaceLabel").text, "1", JSON.stringify(value))
+      compare(findChild(cellFor(widget, 4), "workspaceLabel").text, "4", JSON.stringify(value))
+    }
+  }
+
   function test_highlightsFocusedWorkspace() {
     var focusedWorkspace = makeWorkspace(3)
     Hyprland.workspaces.values = [focusedWorkspace]
@@ -1078,6 +1101,7 @@ TestCase {
       maxIcons: 1,
       iconSize: 14,
       minWorkspaces: 5,
+      workspaceLabels: "",
       hideEmpty: false,
       groupApps: false,
       gameIcons: true,

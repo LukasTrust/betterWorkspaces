@@ -17,6 +17,7 @@ Item {
   property var background: null
 
   signal accepted
+  signal editingFinished
 
   implicitWidth: 200
   implicitHeight: 30

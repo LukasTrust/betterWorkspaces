@@ -54,6 +54,7 @@ Item {
   signal dispatched(string request)
 
   readonly property int minWorkspaces: Settings.clampSetting("minWorkspaces", Settings.settingValue(root.settings, "minWorkspaces"))
+  readonly property string workspaceLabels: Settings.settingValue(root.settings, "workspaceLabels")
   readonly property bool hideEmpty: Settings.clampSetting("hideEmpty", Settings.settingValue(root.settings, "hideEmpty"))
   readonly property bool gameIcons: Settings.clampSetting("gameIcons", Settings.settingValue(root.settings, "gameIcons"))
   readonly property string setupTargetMode: Settings.clampSetting("setupTargetMode", Settings.settingValue(root.settings, "setupTargetMode"))
@@ -911,7 +912,7 @@ Item {
           readonly property bool selected: root.selectedIndex === card.index
           readonly property var monitor: root.monitorRect(root.monitorFor(card.modelData))
           readonly property var placement: root.placementAt(card.index)
-          readonly property string label: card.modelData === 10 ? "0" : String(card.modelData)
+          readonly property string label: Settings.workspaceLabel(card.modelData, root.workspaceLabels)
           // Cards are siblings, so the one being dragged out of has to come
           // to the front or its window travels underneath the later cards.
           property bool dragging: false
@@ -1255,7 +1256,7 @@ Item {
           highlighted: addDrop.containsDrag
           // The number it will make, so it says where you are about to land
           // rather than just "somewhere new".
-          caption: addCard.available ? String(root.newWorkspaceId === 10 ? "0" : root.newWorkspaceId) : ""
+          caption: addCard.available ? Settings.workspaceLabel(root.newWorkspaceId, root.workspaceLabels) : ""
           captionHeight: root.captionHeight
 
           Text {
@@ -1593,7 +1594,7 @@ Item {
                 anchors.centerIn: parent
                 textFormat: Text.PlainText
                 visible: chipSlot.bootWorkspace > 0
-                text: chipSlot.bootWorkspace === 10 ? "0" : String(chipSlot.bootWorkspace)
+                text: Settings.workspaceLabel(chipSlot.bootWorkspace, root.workspaceLabels)
                 color: chipSlot.bootPopoverOpen ? Color.menu.background : Color.menu.text
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
@@ -1659,7 +1660,7 @@ Item {
                     Text {
                       anchors.centerIn: parent
                       textFormat: Text.PlainText
-                      text: bootOption.modelData === 0 ? "off" : (bootOption.modelData === 10 ? "0" : String(bootOption.modelData))
+                      text: bootOption.modelData === 0 ? "off" : Settings.workspaceLabel(bootOption.modelData, root.workspaceLabels)
                       color: bootOption.selected ? Color.menu.background : Color.menu.text
                       font.family: Style.font.family
                       font.pixelSize: Style.font.caption

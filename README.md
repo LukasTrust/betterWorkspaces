@@ -59,7 +59,7 @@ cards, or the same key/gesture again.
 
 - **Click a window** to jump to it. **Middle-click** closes it.
 - **Drag a window** onto another card to move it there, or onto `+` for a
-  new workspace. **Drag the number under a card** onto another to swap their
+  new workspace. **Drag the label under a card** onto another to swap their
   windows (Hyprland can't renumber a workspace, so this moves windows
   instead).
 - **Arrow keys / `hjkl`** navigate, **Enter** opens, **`/`** searches by
@@ -94,6 +94,7 @@ icon. Per-app icon overrides are only editable directly in
   "maxIcons": 5,           // icons shown per workspace before "+N" overflow
   "iconSize": 14,          // icon size in px
   "minWorkspaces": 5,      // workspaces shown even while empty, counted from 1
+  "workspaceLabels": "",   // e.g. "a, b, c" or "一, 二, 三" - see below
   "hideEmpty": false,      // show only workspaces with windows in them
   "groupApps": false,      // one icon per app instead of one per window
   "gameIcons": true,       // a game's own icon instead of the generic fallback
@@ -109,6 +110,23 @@ icon. Per-app icon overrides are only editable directly in
   }
 }
 ```
+
+### Workspace labels
+
+`workspaceLabels` replaces the numbers in the bar and on the overview cards
+with any comma-separated list you like, in order from workspace 1:
+
+```jsonc
+"workspaceLabels": "一, 二, 三, 四, 五, 六, 七, 八, 九, 十"
+"workspaceLabels": "I, II, III, IV, V"
+"workspaceLabels": "a, 1, $, web, 󰈹"
+```
+
+Spaces around each entry are ignored. A workspace past the end of the list,
+or one left blank (`"a, , c"`), keeps its number. Labels can't contain a
+comma, since that separates them. It only changes what is shown: keybindings
+and saved setups still use workspace numbers. Glyphs your bar font lacks need
+a font that has them (e.g. `noto-fonts-cjk` for Japanese).
 
 <img src="screenshots/screenshot-settings.png" alt="Better Workspaces settings" width="500">
 

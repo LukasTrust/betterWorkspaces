@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "better-workspaces",
   "name": "Better Workspaces",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "author": "LukasTrust",
   "license": "MIT",
   "description": "Workspace indicators showing a per-window app icon, plus a full-screen overview to drag windows between workspaces and save/restore whole workspace setups (with optional boot-time restore).",
@@ -27,6 +27,7 @@
       "maxIcons": 5,
       "iconSize": 14,
       "minWorkspaces": 5,
+      "workspaceLabels": "",
       "hideEmpty": false,
       "groupApps": false,
       "gameIcons": true,
@@ -64,6 +65,13 @@
         "max": 10,
         "step": 1,
         "defaultValue": 5
+      },
+      {
+        "key": "workspaceLabels",
+        "type": "string",
+        "label": "Workspace labels",
+        "description": "A comma-separated list shown instead of the numbers, in order from workspace 1 - for example \"a, b, c\" or \"一, 二, 三\". Workspaces past the end of the list, or left blank in it, keep their number.",
+        "defaultValue": ""
       },
       {
         "key": "hideEmpty",
