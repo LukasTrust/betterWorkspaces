@@ -330,6 +330,94 @@ TestCase {
     verify(Math.abs(left.height - surface.height) <= 1, "a full-height window is not drawn full height")
   }
 
+  // Hyprland reports a monitor's width/height in physical pixels but a
+  // window's `at`/`size` in logical/layout pixels (physical / scale,
+  // rounded, exactly as Hyprland itself computes a monitor's logical size).
+  // A maximized window should fill its card at every scale Hyprland's own
+  // settings UI offers, on both plain and odd/ultrawide resolutions - not
+  // just the reporter's 2x.
+  function test_respectsTheMonitorsDisplayScale_data() {
+    return [
+      {
+        tag: "1x 1920x1080",
+        physicalWidth: 1920,
+        physicalHeight: 1080,
+        scale: 1
+      },
+      {
+        tag: "1.25x 2560x1440",
+        physicalWidth: 2560,
+        physicalHeight: 1440,
+        scale: 1.25
+      },
+      {
+        tag: "1.5x 2880x1620",
+        physicalWidth: 2880,
+        physicalHeight: 1620,
+        scale: 1.5
+      },
+      {
+        tag: "1.6x 3072x1728",
+        physicalWidth: 3072,
+        physicalHeight: 1728,
+        scale: 1.6
+      },
+      {
+        tag: "2x 3840x2160",
+        physicalWidth: 3840,
+        physicalHeight: 2160,
+        scale: 2
+      },
+      {
+        tag: "2x 5120x2160 ultrawide",
+        physicalWidth: 5120,
+        physicalHeight: 2160,
+        scale: 2
+      },
+      {
+        tag: "3x 5760x3240",
+        physicalWidth: 5760,
+        physicalHeight: 3240,
+        scale: 3
+      },
+      {
+        tag: "4x 7680x4320",
+        physicalWidth: 7680,
+        physicalHeight: 4320,
+        scale: 4
+      }
+    ]
+  }
+
+  function test_respectsTheMonitorsDisplayScale(data) {
+    var monitor = createTemporaryObject(monitorComponent, testCase, {
+      id: 0,
+      name: "DP-1",
+      x: 0,
+      y: 0,
+      width: data.physicalWidth,
+      height: data.physicalHeight,
+      scale: data.scale
+    })
+    Hyprland.focusedMonitor = monitor
+    Hyprland.monitors.values = [monitor]
+
+    // Hyprland itself derives a monitor's logical size this way, so a
+    // maximized window's reported size lands here too.
+    var logicalWidth = Math.round(data.physicalWidth / data.scale)
+    var logicalHeight = Math.round(data.physicalHeight / data.scale)
+    var maximized = makeWorkspace(1, [makeWindow("foot", "Maximized Terminal", [0, 0], [logicalWidth, logicalHeight])], monitor)
+    Hyprland.workspaces.values = [maximized]
+    Hyprland.focusedWorkspace = maximized
+
+    var view = createOverview()
+    var surface = findChild(cardFor(view, 1), "cardSurface")
+    var window = cardWindow(view, 1, 0)
+    verify(window.visible, "the maximized window was not drawn")
+    verify(Math.abs(window.width - surface.width) <= 1, "a maximized window on a scaled monitor was not drawn full width")
+    verify(Math.abs(window.height - surface.height) <= 1, "a maximized window on a scaled monitor was not drawn full height")
+  }
+
   // A workspace on the second monitor is measured against that monitor, not
   // against whichever one the overview happens to be open on.
   function test_measuresAWorkspaceAgainstItsOwnMonitor() {

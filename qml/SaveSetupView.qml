@@ -49,16 +49,17 @@ Item {
   readonly property var monitor: (root.workspace && root.workspace.monitor) || Hyprland.focusedMonitor
   readonly property var monitorArea: {
     var m = root.monitor
-    return m ? {
+    if (!m)
+      return { x: 0, y: 0, width: 0, height: 0 }
+    // Monitor width/height are physical pixels, but window rectangles from
+    // `hyprctl clients` (see windowRectOf() below) are in logical/layout
+    // pixels, i.e. physical / scale. Convert so both share the same space.
+    var scale = m.scale > 0 ? m.scale : 1
+    return {
       x: m.x,
       y: m.y,
-      width: m.width,
-      height: m.height
-    } : {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0
+      width: m.width / scale,
+      height: m.height / scale
     }
   }
 

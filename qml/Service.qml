@@ -102,11 +102,15 @@ Item {
         width: 0,
         height: 0
       }
+    // Monitor width/height are physical pixels, but the window rectangles
+    // saved setups are replayed against are in logical/layout pixels, i.e.
+    // physical / scale. Convert so both share the same coordinate space.
+    var scale = monitor.scale > 0 ? monitor.scale : 1
     return {
       x: monitor.x,
       y: monitor.y,
-      width: monitor.width,
-      height: monitor.height
+      width: monitor.width / scale,
+      height: monitor.height / scale
     }
   }
 
