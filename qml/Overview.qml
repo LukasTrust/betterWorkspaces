@@ -290,11 +290,16 @@ Item {
         width: root.width,
         height: root.height
       }
+    // Hyprland's monitor width/height are physical pixels, but window
+    // rectangles from `hyprctl clients` (see windowRect() below) are in
+    // logical/layout pixels, i.e. physical / scale. Convert so both share
+    // the same coordinate space.
+    var scale = monitor.scale > 0 ? monitor.scale : 1
     return {
       x: monitor.x,
       y: monitor.y,
-      width: monitor.width,
-      height: monitor.height
+      width: monitor.width / scale,
+      height: monitor.height / scale
     }
   }
 
