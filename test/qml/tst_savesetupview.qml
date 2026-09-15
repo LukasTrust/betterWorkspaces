@@ -231,6 +231,15 @@ TestCase {
     compare(Hyprland.testToplevelRefreshes, before + 1)
   }
 
+  // A display scale changed at runtime isn't re-read by Quickshell on its
+  // own, and a stale one saves every window at the wrong size (issue #2).
+  function test_openingAsksHyprlandForFreshMonitors() {
+    oneMatchedWindow()
+    var before = Hyprland.testMonitorRefreshes
+    makeView()
+    compare(Hyprland.testMonitorRefreshes, before + 1)
+  }
+
   // The refresh itself is async - Hyprland's reply lands some time after
   // `refreshToplevels()` returns, updating each toplevel's `lastIpcObject`
   // whenever it does. A window still showing empty geometry the instant the

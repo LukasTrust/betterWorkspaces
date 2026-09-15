@@ -418,6 +418,37 @@ TestCase {
     verify(Math.abs(window.height - surface.height) <= 1, "a maximized window on a scaled monitor was not drawn full height")
   }
 
+  // Two screens of the same resolution get the same size card whatever their
+  // scale: at 2x a 1920x1080 screen is only 960x540 logical, and sizing the
+  // cards by that drew its card a quarter the size of its neighbour's - with
+  // its windows still filling it correctly.
+  function test_scaledAndUnscaledMonitorsGetEqualCards() {
+    var fixture = threeWorkspaces()
+    fixture.monitor.scale = 2
+    var second = createTemporaryObject(monitorComponent, testCase, {
+      id: 1,
+      name: "DP-3",
+      x: 960,
+      y: 0,
+      width: 1920,
+      height: 1080,
+      scale: 1
+    })
+    Hyprland.monitors.values = [fixture.monitor, second]
+    fixture.third.monitor = second
+    fixture.third.toplevels.values = [makeWindow("foot", "Far Terminal", [960, 0], [1920, 1080])]
+
+    var view = createOverview()
+    var scaled = findChild(cardFor(view, 1), "cardSurface")
+    var unscaled = findChild(cardFor(view, 3), "cardSurface")
+    verify(Math.abs(scaled.width - unscaled.width) <= 1, "a 2x monitor's card was not the size of a 1x monitor's")
+    verify(Math.abs(scaled.height - unscaled.height) <= 1, "a 2x monitor's card was not the height of a 1x monitor's")
+
+    // And a window still fills the card of the monitor it fills.
+    var window = cardWindow(view, 3, 0)
+    verify(Math.abs(window.width - unscaled.width) <= 1, "a maximized window on the 1x monitor was not drawn full width")
+  }
+
   // A workspace on the second monitor is measured against that monitor, not
   // against whichever one the overview happens to be open on.
   function test_measuresAWorkspaceAgainstItsOwnMonitor() {
@@ -459,6 +490,19 @@ TestCase {
     view.active = false
     view.active = true
     compare(Hyprland.testToplevelRefreshes, 2)
+  }
+
+  // Quickshell doesn't re-read a monitor when its display scale changes at
+  // runtime, so a stale scale drew every window on it at a quarter of its
+  // card at 2x (issue #2). Opening asks for the monitors again as well.
+  function test_asksHyprlandForFreshMonitorsWhenItOpens() {
+    threeWorkspaces()
+    var view = createOverview()
+    compare(Hyprland.testMonitorRefreshes, 1)
+
+    view.active = false
+    view.active = true
+    compare(Hyprland.testMonitorRefreshes, 2)
   }
 
   function test_leavesOutAWindowHyprlandHasNoGeometryFor() {
