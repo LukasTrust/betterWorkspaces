@@ -468,7 +468,13 @@ Item {
   //
   // Asking once as the overview opens is not polling: it is the one moment
   // the geometry matters, and it is the answer that fills the cards in.
+  //
+  // Monitors too: Quickshell only re-reads them on a config reload or a
+  // monitor being added, so a display scale changed at runtime leaves the
+  // old scale behind - and every window on that monitor drawn at the wrong
+  // size, a quarter of its card at 2x (issue #2).
   function refreshGeometry() {
+    Hyprland.refreshMonitors()
     Hyprland.refreshToplevels()
   }
 
@@ -506,20 +512,28 @@ Item {
   // the screen its workspace is on, so the windows drawn on it are the shape
   // they really are; the "+" card borrows the focused monitor's shape so it
   // sits in the grid like any other.
+  //
+  // Sized by the monitor's physical pixels, not the logical ones windows are
+  // measured in: a 1920x1080 screen at 2x is only 960x540 logical, and cards
+  // sized by that came out a quarter of its unscaled neighbour's. Scale says
+  // how big things are drawn on a screen, not how big the screen is.
+  function cardShape(monitor) {
+    if (!monitor)
+      return {
+        width: root.width,
+        height: root.height
+      }
+    return {
+      width: monitor.width,
+      height: monitor.height
+    }
+  }
+
   readonly property var cellSizes: {
     var sizes = []
-    for (var i = 0; i < root.workspaceIds.length; i++) {
-      var monitor = root.monitorRect(root.monitorFor(root.workspaceIds[i]))
-      sizes.push({
-        width: monitor.width,
-        height: monitor.height
-      })
-    }
-    var focused = root.monitorRect(Hyprland.focusedMonitor)
-    sizes.push({
-      width: focused.width,
-      height: focused.height
-    })
+    for (var i = 0; i < root.workspaceIds.length; i++)
+      sizes.push(root.cardShape(root.monitorFor(root.workspaceIds[i])))
+    sizes.push(root.cardShape(Hyprland.focusedMonitor))
     return sizes
   }
 

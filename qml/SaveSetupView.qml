@@ -194,8 +194,13 @@ Item {
   // asks for everyone's current geometry; the reply is async, so the
   // capture is redone once more after a short settle rather than trusting
   // whatever was already there the instant this ran.
+  //
+  // Monitors are asked for again too: Quickshell doesn't re-read them when a
+  // display scale changes at runtime, and a stale scale draws (and saves)
+  // every window on that monitor at the wrong size (issue #2).
   function open() {
     root.reset()
+    Hyprland.refreshMonitors()
     Hyprland.refreshToplevels()
     root.refreshCapture()
     refreshSettleTimer.restart()
