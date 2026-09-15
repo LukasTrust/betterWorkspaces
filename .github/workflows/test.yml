@@ -2,7 +2,9 @@ name: Test
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
   logic:
@@ -24,6 +26,7 @@ jobs:
       - uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: "6.11.2"
+          cache: true
       # Every QML file (widget, tests and stubs) must match .qmlformat.ini.
       # Excluded: the HyprlandWorkspace/HyprlandMonitor stand-ins, which
       # must declare `property int id` to mirror the real API - the QML
