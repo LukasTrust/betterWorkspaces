@@ -271,6 +271,39 @@ TestCase {
     compare(findChild(cardFor(view, 10), "cardCaption").text, "0")
   }
 
+  function test_captionsCardsFromTheLabelList() {
+    threeWorkspaces()
+    var view = createOverview({
+      workspaceLabels: "一, , 三"
+    })
+    compare(findChild(cardFor(view, 1), "cardCaption").text, "一")
+    compare(findChild(cardFor(view, 2), "cardCaption").text, "2")
+    compare(findChild(cardFor(view, 3), "cardCaption").text, "三")
+  }
+
+  // The exact list from the report where the overview looked unchanged.
+  function test_captionsCardsFromAListWithSymbols() {
+    threeWorkspaces()
+    var view = createOverview({
+      workspaceLabels: "test, $, a, b",
+      minWorkspaces: 4
+    })
+    compare(findChild(cardFor(view, 1), "cardCaption").text, "test")
+    compare(findChild(cardFor(view, 2), "cardCaption").text, "$")
+    compare(findChild(cardFor(view, 3), "cardCaption").text, "a")
+    compare(findChild(cardFor(view, 4), "cardCaption").text, "b")
+  }
+
+  function test_captionsFollowALabelChangeWhileOpen() {
+    threeWorkspaces()
+    var view = createOverview()
+    compare(findChild(cardFor(view, 3), "cardCaption").text, "3")
+    view.settings = {
+      workspaceLabels: "test, $, a"
+    }
+    compare(findChild(cardFor(view, 3), "cardCaption").text, "a")
+  }
+
   // ---- the grid -------------------------------------------------------------
 
   // The cards fill the screen rather than sitting in a strip, so a window

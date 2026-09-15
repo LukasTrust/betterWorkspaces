@@ -86,6 +86,14 @@ Item {
     root.settingChanged(key, next[key])
   }
 
+  // Enter fires both `accepted` and `editingFinished`, so an unchanged value
+  // is skipped rather than written to shell.json twice.
+  function commitText(key, text) {
+    if (String(text) === root.valueOf(key))
+      return
+    root.change(key, text)
+  }
+
   // Width comes from the caller, height from the content: anchoring the
   // layout to the parent instead would make the two depend on each other.
   ColumnLayout {
@@ -161,6 +169,25 @@ Item {
           }
         }
 
+        // Free text, committed on Enter or when the field loses focus (a click
+        // elsewhere, Esc closing the card) - not per keystroke, so the bar
+        // isn't relabelled while a list is still being typed. Unlike renaming
+        // a setup below, committing doesn't rebuild this row, so focus loss
+        // is safe to act on. Clearing the field commits "", which puts every
+        // workspace back on its number.
+        Component {
+          id: textControl
+
+          TextField {
+            objectName: "fieldInput"
+            text: root.valueOf(row.modelData.key)
+            placeholderText: "1, 2, 3, …"
+            foreground: Color.menu.text
+            onAccepted: root.commitText(row.modelData.key, text)
+            onEditingFinished: root.commitText(row.modelData.key, text)
+          }
+        }
+
         // A row of small buttons, one per option - the only field type with
         // more than two possible values, so a switch doesn't fit it.
         Component {
@@ -211,8 +238,8 @@ Item {
           readonly property string kind: row.modelData.type
 
           Layout.alignment: Qt.AlignVCenter
-          Layout.preferredWidth: kind === "integer" ? Style.spacing.numberFieldWidth : implicitWidth
-          sourceComponent: kind === "boolean" ? switchControl : (kind === "enum" ? enumControl : numberControl)
+          Layout.preferredWidth: kind === "integer" ? Style.spacing.numberFieldWidth : (kind === "string" ? Math.round(root.width * 0.4) : implicitWidth)
+          sourceComponent: kind === "boolean" ? switchControl : (kind === "enum" ? enumControl : (kind === "string" ? textControl : numberControl))
         }
       }
     }

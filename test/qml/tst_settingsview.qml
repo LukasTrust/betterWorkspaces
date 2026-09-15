@@ -112,7 +112,7 @@ TestCase {
 
   function test_showsOneFieldPerSetting() {
     var view = createView()
-    var keys = ["maxIcons", "iconSize", "minWorkspaces", "hideEmpty", "groupApps", "gameIcons", "overviewEnabled", "setupTargetMode", "focusAfterSetupDrop"]
+    var keys = ["maxIcons", "iconSize", "minWorkspaces", "workspaceLabels", "hideEmpty", "groupApps", "gameIcons", "overviewEnabled", "setupTargetMode", "focusAfterSetupDrop"]
     compare(findChild(view, "fieldRepeater").count, keys.length)
 
     for (var i = 0; i < keys.length; i++) {
@@ -171,6 +171,71 @@ TestCase {
       hideEmpty: "nonsense"
     })
     compare(fieldInput(view, "hideEmpty").checked, false)
+  }
+
+  // ---- the text control (workspaceLabels) ------------------------------------
+
+  function test_showsATextSettingAsATextField() {
+    var view = createView({
+      workspaceLabels: "a, b, c"
+    })
+    compare(fieldInput(view, "workspaceLabels").text, "a, b, c")
+  }
+
+  function test_pressingEnterInATextFieldWritesTheEntryBack() {
+    var view = createView({
+      maxIcons: 3
+    })
+    var input = fieldInput(view, "workspaceLabels")
+    input.text = "a, 1, $"
+    compare(fakeShell.testWrites.length, 0)
+
+    input.accepted()
+    compare(fakeShell.testWrites.length, 1)
+    compare(fakeShell.testWrites[0].settings, {
+      maxIcons: 3,
+      workspaceLabels: "a, 1, $"
+    })
+  }
+
+  function test_clearingTheLabelsWritesAnEmptyListBack() {
+    var view = createView({
+      workspaceLabels: "test, %, a, b"
+    })
+    var input = fieldInput(view, "workspaceLabels")
+    input.text = ""
+    input.accepted()
+    compare(fakeShell.testWrites.length, 1)
+    compare(fakeShell.testWrites[0].settings.workspaceLabels, "")
+    compare(input.placeholderText, "1, 2, 3, …")
+  }
+
+  // Clearing the field and clicking away (or Esc closing the card) has to
+  // count too, not only Enter.
+  function test_leavingATextFieldWritesTheEntryBack() {
+    var view = createView({
+      workspaceLabels: "a, b"
+    })
+    var input = fieldInput(view, "workspaceLabels")
+    input.text = ""
+    input.editingFinished()
+    compare(fakeShell.testWrites.length, 1)
+    compare(fakeShell.testWrites[0].settings.workspaceLabels, "")
+  }
+
+  // Enter emits both signals; the second must not write the same value again.
+  function test_anUnchangedTextFieldWritesNothing() {
+    var view = createView({
+      workspaceLabels: "a, b"
+    })
+    var input = fieldInput(view, "workspaceLabels")
+    input.editingFinished()
+    compare(fakeShell.testWrites.length, 0)
+
+    input.text = "c"
+    input.accepted()
+    input.editingFinished()
+    compare(fakeShell.testWrites.length, 1)
   }
 
   // ---- the enum control (setupTargetMode) ------------------------------------

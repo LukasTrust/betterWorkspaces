@@ -14,6 +14,7 @@ const {
   settingValue,
   widgetSettingsFrom,
   computeWorkspaceIds,
+  workspaceLabel,
   sameIds
 } = require("../js/settings.js")
 
@@ -183,8 +184,11 @@ test("every setting carries the bounds and wording the form needs", () => {
   for (const field of SETTING_FIELDS) {
     assert.ok(field.label, `${field.key}: no label`)
     assert.ok(field.description, `${field.key}: no description`)
-    assert.ok(["integer", "boolean", "enum"].includes(field.type), `${field.key}: unknown type ${field.type}`)
-    if (field.type === "integer") {
+    assert.ok(["integer", "boolean", "enum", "string"].includes(field.type), `${field.key}: unknown type ${field.type}`)
+    if (field.type === "string") {
+      assert.equal(typeof field.fallback, "string", `${field.key}: default is not a string`)
+      assert.ok(field.maxLength > 0, `${field.key}: needs a maxLength`)
+    } else if (field.type === "integer") {
       assert.ok(field.min < field.max, `${field.key}: empty range`)
       assert.ok(field.fallback >= field.min && field.fallback <= field.max, `${field.key}: default out of range`)
     } else if (field.type === "enum") {
@@ -219,4 +223,43 @@ test("widgetSettingsFrom returns nothing usable rather than throwing", () => {
   assert.deepEqual(widgetSettingsFrom(null, "better-workspaces"), {})
   assert.deepEqual(widgetSettingsFrom({}, "better-workspaces"), {})
   assert.deepEqual(widgetSettingsFrom({ layout: { left: [{ id: "other" }] } }, "better-workspaces"), {})
+})
+
+test("workspaceLabel keeps the numbers, with 10 as 0, while no labels are set", () => {
+  assert.equal(workspaceLabel(1, ""), "1")
+  assert.equal(workspaceLabel(9, undefined), "9")
+  assert.equal(workspaceLabel(10, null), "0")
+})
+
+test("workspaceLabel takes any comma-separated list, in order from workspace 1", () => {
+  assert.equal(workspaceLabel(1, "a, b,c"), "a")
+  assert.equal(workspaceLabel(2, "a, b,c"), "b")
+  assert.equal(workspaceLabel(3, "a, b,c"), "c")
+  assert.equal(workspaceLabel(2, "a, 1, $"), "1")
+  assert.equal(workspaceLabel(3, "a, 1, $"), "$")
+  assert.equal(workspaceLabel(3, "一,二,三"), "三")
+  assert.equal(workspaceLabel(10, "1,2,3,4,5,6,7,8,9,十"), "十")
+})
+
+test("workspaceLabel falls back to the number past the list's end or on a blank entry", () => {
+  assert.equal(workspaceLabel(4, "a, b, c"), "4")
+  assert.equal(workspaceLabel(10, "a, b, c"), "0")
+  assert.equal(workspaceLabel(2, "a, , c"), "2")
+  assert.equal(workspaceLabel(2, "a,   ,c"), "2")
+  assert.equal(workspaceLabel(1, ",b"), "1")
+})
+
+test("workspaceLabels accepts a JSON array and rejects anything else", () => {
+  assert.equal(clampSetting("workspaceLabels", ["a", "b"]), "a,b")
+  assert.equal(workspaceLabel(2, ["a", "b"]), "b")
+  assert.equal(workspaceLabel(1, [null, "b"]), "1")
+  assert.equal(workspaceLabel(2, [1, 2]), "2")
+  assert.equal(clampSetting("workspaceLabels", 42), "")
+  assert.equal(clampSetting("workspaceLabels", { a: 1 }), "")
+  assert.equal(workspaceLabel(3, true), "3")
+})
+
+test("workspaceLabels is capped rather than growing without bound", () => {
+  const max = settingField("workspaceLabels").maxLength
+  assert.equal(clampSetting("workspaceLabels", "x".repeat(max + 50)).length, max)
 })

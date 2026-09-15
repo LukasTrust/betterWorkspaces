@@ -26,7 +26,8 @@
 // same defaults.
 //
 // `type` decides both the control the form shows and how a stored value is
-// read back: "integer" (with `min`/`max`) or "boolean".
+// read back: "integer" (with `min`/`max`), "boolean", "enum" (with
+// `options`) or "string" (with `maxLength`).
 //
 // Labels live here rather than in manifest.json: settings are edited in this
 // plugin's own overlay, not in the Setup menu's generated form.
@@ -57,6 +58,14 @@ var SETTING_FIELDS = [
     fallback: 5,
     label: "Workspaces always shown",
     description: "Workspaces shown even while they are empty, counted from 1. Ignored while empty workspaces are hidden."
+  },
+  {
+    key: "workspaceLabels",
+    type: "string",
+    maxLength: 500,
+    fallback: "",
+    label: "Workspace labels",
+    description: "A comma-separated list shown instead of the numbers, in order from workspace 1 - for example \"a, b, c\" or \"一, 二, 三\". Workspaces past the end of the list, or left blank in it, keep their number."
   },
   {
     key: "hideEmpty",
@@ -140,6 +149,14 @@ function clampSetting(name, value) {
   if (field.type === "enum") {
     var text = typeof value === "string" ? value.trim() : value
     return field.options.indexOf(text) !== -1 ? text : field.fallback
+  }
+  // Someone editing shell.json by hand may well write the list as a JSON
+  // array rather than one string, so that is taken as the same list.
+  if (field.type === "string") {
+    var list = value
+    if (Array.isArray(list)) list = list.map(function(item) { return item === null || item === undefined ? "" : String(item) }).join(",")
+    if (typeof list !== "string") return field.fallback
+    return list.slice(0, field.maxLength)
   }
 
   var raw = typeof value === "string" ? value.trim() : value
@@ -226,6 +243,19 @@ function computeWorkspaceIds(workspaces, options) {
   return ids
 }
 
+// What a workspace is called in the bar and on its overview card. `labels`
+// is the `workspaceLabels` setting: any comma-separated list, where the Nth
+// entry names workspace N. An entry left blank, or a workspace past the end
+// of the list, keeps its number - with 10 shown as "0", matching the key
+// that switches to it.
+function workspaceLabel(id, labels) {
+  var number = Number(id)
+  var entries = clampSetting("workspaceLabels", labels).split(",")
+  var entry = number >= 1 && number <= entries.length ? entries[number - 1].trim() : ""
+  if (entry.length > 0) return entry
+  return number === 10 ? "0" : String(id)
+}
+
 // Whether two id lists hold the same ids in the same order. The widget
 // rebuilds every cell when its list changes, so it uses this to leave the
 // list alone when a recomputation came out identical.
@@ -247,6 +277,7 @@ if (typeof module !== "undefined") {
     settingValue: settingValue,
     widgetSettingsFrom: widgetSettingsFrom,
     computeWorkspaceIds: computeWorkspaceIds,
+    workspaceLabel: workspaceLabel,
     sameIds: sameIds
   }
 }

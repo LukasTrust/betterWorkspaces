@@ -173,6 +173,7 @@ BarWidget {
   readonly property int maxIcons: Settings.clampSetting("maxIcons", setting("maxIcons", null))
   readonly property int iconSize: Settings.clampSetting("iconSize", setting("iconSize", null))
   readonly property int minWorkspaces: Settings.clampSetting("minWorkspaces", setting("minWorkspaces", null))
+  readonly property string workspaceLabels: Settings.clampSetting("workspaceLabels", setting("workspaceLabels", null))
   readonly property bool hideEmpty: Settings.clampSetting("hideEmpty", setting("hideEmpty", null))
   readonly property bool groupApps: Settings.clampSetting("groupApps", setting("groupApps", null))
   readonly property bool gameIcons: Settings.clampSetting("gameIcons", setting("gameIcons", null))
@@ -242,6 +243,7 @@ BarWidget {
         maxIcons: root.maxIcons,
         iconSize: root.iconSize,
         minWorkspaces: root.minWorkspaces,
+        workspaceLabels: root.workspaceLabels,
         hideEmpty: root.hideEmpty,
         groupApps: root.groupApps,
         gameIcons: root.gameIcons,
@@ -304,7 +306,7 @@ BarWidget {
         })
         readonly property var shownGroups: iconGroups.slice(0, root.maxIcons)
         readonly property int overflowCount: Math.max(0, iconGroups.length - root.maxIcons)
-        readonly property string label: modelData === 10 ? "0" : String(modelData)
+        readonly property string label: Settings.workspaceLabel(modelData, root.workspaceLabels)
         property alias iconItems: iconRepeater
 
         opacity: occupied || focused ? 1 : 0.5
@@ -339,6 +341,11 @@ BarWidget {
           Text {
             objectName: "workspaceLabel"
             Layout.alignment: Qt.AlignCenter
+            // A custom label can be a whole word; a vertical bar's cells are
+            // only the bar's width, so there it is cut short rather than
+            // spilling past the bar's edge.
+            Layout.maximumWidth: root.vertical ? root.barSize - Style.space(4) : Number.POSITIVE_INFINITY
+            elide: Text.ElideRight
             textFormat: Text.PlainText
             // A theme-color change rather than a swapped-in glyph: the
             // focus icon in the stock widget is a Nerd Font codepoint that
