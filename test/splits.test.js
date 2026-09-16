@@ -23,12 +23,12 @@ function aRecipe(id) {
   return { type: "desktop-entry", id: id }
 }
 
-function tiledWindow(recipeId, x, y, width, height) {
-  return { recipe: aRecipe(recipeId), floating: false, rect: { x, y, width, height } }
+function tiledWindow(recipeId, x, y, width, height, windowClass) {
+  return { recipe: aRecipe(recipeId), class: windowClass || "", floating: false, rect: { x, y, width, height } }
 }
 
-function floatingWindow(recipeId, x, y, width, height) {
-  return { recipe: aRecipe(recipeId), floating: true, rect: { x, y, width, height } }
+function floatingWindow(recipeId, x, y, width, height, windowClass) {
+  return { recipe: aRecipe(recipeId), class: windowClass || "", floating: true, rect: { x, y, width, height } }
 }
 
 test("inferSplitTree keeps a single window as one leaf", () => {
@@ -228,17 +228,17 @@ test("absoluteRect copes with nothing usable", () => {
 })
 
 test("planOpenSetup opens a single tiled window with no preselect", () => {
-  const setup = { windows: [tiledWindow("a", 0, 0, 1, 1)] }
+  const setup = { windows: [tiledWindow("a", 0, 0, 1, 1, "firefox")] }
   assert.deepEqual(planOpenSetup(setup, { width: 1920, height: 1080 }), [
-    { index: 0, recipe: aRecipe("a"), floating: false, preselect: null, focusIndex: null, rect: null }
+    { index: 0, recipe: aRecipe("a"), class: "firefox", floating: false, preselect: null, focusIndex: null, rect: null }
   ])
 })
 
 test("planOpenSetup carries the split direction and focus target for a second tiled window", () => {
   const setup = { windows: [tiledWindow("a", 0, 0, 0.5, 1), tiledWindow("b", 0.5, 0, 0.5, 1)] }
   assert.deepEqual(planOpenSetup(setup, { width: 1920, height: 1080 }), [
-    { index: 0, recipe: aRecipe("a"), floating: false, preselect: null, focusIndex: null, rect: null },
-    { index: 1, recipe: aRecipe("b"), floating: false, preselect: "right", focusIndex: 0, rect: null }
+    { index: 0, recipe: aRecipe("a"), class: "", floating: false, preselect: null, focusIndex: null, rect: null },
+    { index: 1, recipe: aRecipe("b"), class: "", floating: false, preselect: "right", focusIndex: 0, rect: null }
   ])
 })
 
@@ -256,6 +256,7 @@ test("planOpenSetup puts every floating window after the tiled ones, positioned 
   assert.deepEqual(plan[1], {
     index: 1,
     recipe: aRecipe("b"),
+    class: "",
     floating: true,
     preselect: null,
     focusIndex: null,
@@ -267,7 +268,7 @@ test("planOpenSetup handles a workspace that is only floating windows", () => {
   const setup = { windows: [floatingWindow("a", 0, 0, 0.5, 0.5)] }
   const plan = planOpenSetup(setup, { x: 0, y: 0, width: 1000, height: 1000 })
   assert.deepEqual(plan, [
-    { index: 0, recipe: aRecipe("a"), floating: true, preselect: null, focusIndex: null, rect: { x: 0, y: 0, width: 500, height: 500 } }
+    { index: 0, recipe: aRecipe("a"), class: "", floating: true, preselect: null, focusIndex: null, rect: { x: 0, y: 0, width: 500, height: 500 } }
   ])
 })
 

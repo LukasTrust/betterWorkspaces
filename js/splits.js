@@ -242,6 +242,11 @@ function absoluteRect(rect, area) {
 // Tiled windows come first, in build order, so every floating window is
 // free to be positioned last without disturbing the tiled layout underneath
 // it.
+//
+// Each entry also carries the window's saved `class`, so the caller can
+// check that the toplevel it just saw actually belongs to this step rather
+// than assuming - the only signal available for that is window class,
+// since nothing else about a freshly mapped toplevel is known yet.
 function planOpenSetup(setup, targetArea) {
   var windows = (setup && setup.windows) || []
   var captured = []
@@ -259,6 +264,7 @@ function planOpenSetup(setup, targetArea) {
     operations.push({
       index: step.index,
       recipe: windows[step.index].recipe,
+      class: String(windows[step.index].class || ""),
       floating: false,
       preselect: step.preselect,
       focusIndex: step.focusIndex,
@@ -270,6 +276,7 @@ function planOpenSetup(setup, targetArea) {
     operations.push({
       index: index,
       recipe: windows[index].recipe,
+      class: String(windows[index].class || ""),
       floating: true,
       preselect: null,
       focusIndex: null,
