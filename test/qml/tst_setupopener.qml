@@ -63,7 +63,9 @@ TestCase {
   // live, where the class isn't known until Hyprland answers a fresh
   // `hyprctl clients` query.
   function reportClass(toplevel, windowClass) {
-    toplevel.lastIpcObject = { class: windowClass }
+    toplevel.lastIpcObject = {
+      class: windowClass
+    }
   }
 
   function tiledWindowWithClass(recipe, x, y, width, height, windowClass) {
@@ -373,10 +375,7 @@ TestCase {
     })
     var opener = makeOpener()
     opener.open({
-      windows: [
-        tiledWindowWithClass(desktopRecipe("a"), 0, 0, 0.5, 1, "floorp"),
-        tiledWindowWithClass(desktopRecipe("b"), 0.5, 0, 0.5, 1, "code")
-      ]
+      windows: [tiledWindowWithClass(desktopRecipe("a"), 0, 0, 0.5, 1, "floorp"), tiledWindowWithClass(desktopRecipe("b"), 0.5, 0, 0.5, 1, "code")]
     }, {
       width: 1920,
       height: 1080

@@ -161,7 +161,10 @@ Item {
         root._acceptCandidate(op, object)
         return
       }
-      root._pendingClassCandidates.push({ address: String(object.address || ""), object: object })
+      root._pendingClassCandidates.push({
+        address: String(object.address || ""),
+        object: object
+      })
       Hyprland.refreshToplevels()
       classCheckTimer.restart()
     }
