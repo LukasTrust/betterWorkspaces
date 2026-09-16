@@ -20,6 +20,7 @@ TestCase {
     Plugin.SetupOpener {
       timeoutMs: 300
       settleMs: 1
+      classCheckMs: 5
     }
   }
 
@@ -55,6 +56,28 @@ TestCase {
     })
     Hyprland.toplevels.testInsert(toplevel)
     return toplevel
+  }
+
+  // Simulates `refreshToplevels()`'s reply landing after the toplevel was
+  // already inserted with an empty `lastIpcObject` - exactly what happens
+  // live, where the class isn't known until Hyprland answers a fresh
+  // `hyprctl clients` query.
+  function reportClass(toplevel, windowClass) {
+    toplevel.lastIpcObject = { class: windowClass }
+  }
+
+  function tiledWindowWithClass(recipe, x, y, width, height, windowClass) {
+    return {
+      recipe: recipe,
+      class: windowClass,
+      floating: false,
+      rect: {
+        x: x,
+        y: y,
+        width: width,
+        height: height
+      }
+    }
   }
 
   function desktopRecipe(id) {
@@ -328,5 +351,105 @@ TestCase {
       return finishedSpy.count === 1
     }, 2000)
     compare(finishedSpy.signalArguments[0][0], false)
+  }
+
+  // ---- class matching -----------------------------------------------------
+
+  // Regression test for a saved setup that includes a multi-window app
+  // (e.g. a browser restoring its own previous session): an extra window
+  // that isn't the one this step launched must not be mistaken for it, or
+  // the address the next step focuses/preselects off of is wrong and the
+  // whole rest of the layout ends up scrambled.
+  function test_ignoresAnUnrelatedWindowAndWaitsForTheOneWithTheRightClass() {
+    DesktopEntries.testSetEntries({
+      a: {
+        id: "a",
+        execute: function () {}
+      },
+      b: {
+        id: "b",
+        execute: function () {}
+      }
+    })
+    var opener = makeOpener()
+    opener.open({
+      windows: [
+        tiledWindowWithClass(desktopRecipe("a"), 0, 0, 0.5, 1, "floorp"),
+        tiledWindowWithClass(desktopRecipe("b"), 0.5, 0, 0.5, 1, "code")
+      ]
+    }, {
+      width: 1920,
+      height: 1080
+    })
+
+    // A window with the wrong class appears first, its class known
+    // immediately - same as a browser's own session-restore window mapping
+    // just ahead of the one this step actually launched.
+    var unrelated = insertToplevel("1")
+    reportClass(unrelated, "some-other-app")
+    verify(opener.running)
+    compare(finishedSpy.count, 0)
+
+    var real = insertToplevel("2")
+    reportClass(real, "floorp")
+
+    // The focus/preselect for "b" must be keyed off "2" (floorp), not "1"
+    // (the unrelated window that appeared first).
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ window = \"address:0x2\" })", "hl.dsp.layout(\"preselect r\")"])
+  }
+
+  // A toplevel's class isn't known the instant it's inserted - Hyprland
+  // hasn't answered a fresh `hyprctl clients` query yet - so the check has
+  // to wait for `reportClass` (standing in for that reply) rather than
+  // deciding off of an empty class.
+  function test_waitsForAClassThatArrivesAfterTheWindowIsInserted() {
+    DesktopEntries.testSetEntries({
+      a: {
+        id: "a",
+        execute: function () {}
+      }
+    })
+    var opener = makeOpener()
+    opener.open({
+      windows: [tiledWindowWithClass(desktopRecipe("a"), 0, 0, 1, 1, "floorp")]
+    }, {
+      width: 1920,
+      height: 1080
+    })
+
+    var toplevel = insertToplevel("1")
+    // No class reported yet - nothing to compare against, so this must not
+    // finish early on an empty match.
+    compare(finishedSpy.count, 0)
+
+    reportClass(toplevel, "floorp")
+    tryCompare(finishedSpy, "count", 1)
+    compare(finishedSpy.signalArguments[0][0], true)
+  }
+
+  // A class that never turns up (Hyprland reports it differently than the
+  // plugin resolved it when the setup was saved, or the ipc reply never
+  // lands) can't be allowed to stall the rest of the setup forever - the
+  // step still completes, best-effort, off whichever window did appear.
+  function test_fallsBackToTheCandidateIfItsClassNeverConfirms() {
+    DesktopEntries.testSetEntries({
+      a: {
+        id: "a",
+        execute: function () {}
+      }
+    })
+    var opener = makeOpener()
+    opener.open({
+      windows: [tiledWindowWithClass(desktopRecipe("a"), 0, 0, 1, 1, "floorp")]
+    }, {
+      width: 1920,
+      height: 1080
+    })
+
+    insertToplevel("1")
+    // Never reports a class - the retry budget (classCheckMs * 6, tiny in
+    // this test) runs out and it falls back to this one candidate.
+    tryCompare(finishedSpy, "count", 1)
+    compare(finishedSpy.signalArguments[0][0], true)
   }
 }

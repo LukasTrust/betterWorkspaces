@@ -45,6 +45,17 @@ Item {
   property var _addressByIndex: ({})
   property bool _timedOut: false
 
+  // A toplevel's `lastIpcObject` (where its window class lives) is empty
+  // the instant it's inserted - Quickshell hasn't asked Hyprland for its
+  // `hyprctl clients` details yet - so a step with a class to check against
+  // can't decide on the spot. Candidates collect here while
+  // `classCheckTimer` gives Hyprland's IPC reply a few chances to land
+  // before this step commits to whichever one actually matches.
+  property var _pendingClassCandidates: []
+  property int _classCheckRetries: 0
+  property int classCheckMs: 150
+  readonly property int _maxClassCheckRetries: 6
+
   function dispatch(request) {
     Hyprland.dispatch(request)
     root.dispatched(request)
@@ -82,6 +93,8 @@ Item {
     root._stepIndex = 0
     root._addressByIndex = ({})
     root._timedOut = false
+    root._pendingClassCandidates = []
+    root._classCheckRetries = 0
     if (plan.length === 0) {
       root.finished(true)
       return
@@ -107,20 +120,86 @@ Item {
     root.launch(op.recipe)
   }
 
-  // The very next toplevel to appear is the one this step just launched -
-  // steps run strictly one at a time, so there is nothing else it could be
-  // (short of something unrelated opening a window in the same moment,
-  // which would misattribute one step and is the same "best effort on a
-  // busy workspace" tradeoff the rest of restoring already makes).
+  function _classOf(object) {
+    var ipc = (object && object.lastIpcObject) || {}
+    return String(ipc.class || ipc.initialClass || "")
+  }
+
+  // Commits `object` as the window this step launched: cancels whatever
+  // else was pending for it and moves on, same as the old unconditional
+  // "the next toplevel is it" path.
+  function _acceptCandidate(op, object) {
+    stepTimer.stop()
+    classCheckTimer.stop()
+    root._pendingClassCandidates = []
+    root._classCheckRetries = 0
+    root._addressByIndex[op.index] = object.address
+    settleTimer.restart()
+  }
+
+  // The next toplevel to appear is normally the one this step just launched
+  // - steps run strictly one at a time - but a multi-window app (a browser
+  // restoring its previous session, a profile picker, anything that maps an
+  // extra window on its own) can put something unrelated on the toplevel
+  // list first. Taking that at face value used to misattribute the step,
+  // which then cascaded into every window after it landing on the wrong
+  // workspace (observed live with a saved setup that included a
+  // multi-window browser). A saved window's `class` is the only signal
+  // available to tell the two apart, but it isn't available yet: a
+  // freshly inserted toplevel's `lastIpcObject` is still empty until
+  // Hyprland answers a fresh `hyprctl clients` query. So a step with a
+  // class to check against doesn't decide here - it queues the candidate
+  // and `classCheckTimer` sorts it out once the reply lands. A step with
+  // no recorded class keeps the old instant-accept behavior.
   Connections {
     target: Hyprland.toplevels
     function onObjectInsertedPost(object, index) {
       if (!root.running || !stepTimer.running)
         return
-      stepTimer.stop()
       var op = root._plan[root._stepIndex]
-      root._addressByIndex[op.index] = object.address
-      settleTimer.restart()
+      if (!op.class) {
+        root._acceptCandidate(op, object)
+        return
+      }
+      root._pendingClassCandidates.push({ address: String(object.address || ""), object: object })
+      Hyprland.refreshToplevels()
+      classCheckTimer.restart()
+    }
+  }
+
+  // Checks every candidate collected since the last try against this
+  // step's expected class. A match wins outright. Otherwise, as long as
+  // there's still budget left, ask Hyprland again and give it another
+  // round - a class that hasn't arrived yet reads the same as one that's
+  // wrong, and there's no way to tell those apart except waiting. Once
+  // the budget runs out, fall back to the oldest candidate rather than
+  // stalling the rest of the setup over a step whose class never confirms
+  // (a class Hyprland reports differently than the plugin resolved it, or
+  // that genuinely never turns up).
+  Timer {
+    id: classCheckTimer
+    objectName: "classCheckTimer"
+    interval: root.classCheckMs
+    onTriggered: {
+      if (!root.running || !stepTimer.running)
+        return
+      var op = root._plan[root._stepIndex]
+      var pending = root._pendingClassCandidates
+      for (var i = 0; i < pending.length; i++) {
+        var candidateClass = root._classOf(pending[i].object)
+        if (candidateClass.length > 0 && candidateClass.toLowerCase() === op.class.toLowerCase()) {
+          root._acceptCandidate(op, pending[i].object)
+          return
+        }
+      }
+      root._classCheckRetries++
+      if (root._classCheckRetries >= root._maxClassCheckRetries) {
+        if (pending.length > 0)
+          root._acceptCandidate(op, pending[0].object)
+        return
+      }
+      Hyprland.refreshToplevels()
+      classCheckTimer.restart()
     }
   }
 
@@ -133,6 +212,9 @@ Item {
     interval: root.timeoutMs
     onTriggered: {
       root._timedOut = true
+      classCheckTimer.stop()
+      root._pendingClassCandidates = []
+      root._classCheckRetries = 0
       root._stepIndex++
       root._runStep()
     }

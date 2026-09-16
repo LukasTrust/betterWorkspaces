@@ -81,6 +81,11 @@ A strip along the bottom of the overview once you've saved at least one.
 
 Reopening a setup replays each window's own launch command and rebuilds its
 tiled layout on a best-effort basis (exact only on an empty workspace).
+Relaunching a browser (or any app) that's already running just opens another
+window in that same process, which lands wherever the compositor currently
+has focus - there's no way to launch a second window of an already-running
+single-instance app "for" a specific workspace, so multiple saved windows of
+the same browser end up together on whichever one opens first.
 
 ## Configuration
 
