@@ -613,6 +613,7 @@ TestCase {
   function test_clickingPlusOpensThatWorkspaceAndCloses() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     mouseClick(findChild(view, "addCardMouseArea"))
@@ -928,9 +929,19 @@ TestCase {
     compare(Hyprland.testDispatched, [])
   }
 
+  // Omarchy before 4.5 has no state file and no `o.workspaces`.
+  function test_withoutTheStateFileClickingACardFocusesByIdNotByOWorkspaces() {
+    threeWorkspaces()
+    var view = createOverview()
+
+    mouseClick(findChild(cardFor(view, 3), "cardMouseArea"))
+    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+  }
+
   function test_clickingACardOpensThatWorkspaceAndCloses() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     mouseClick(findChild(cardFor(view, 3), "cardMouseArea"))
@@ -1055,6 +1066,7 @@ TestCase {
   function test_arrowsAndHjklWalkTheCardsAndEnterOpensOne() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
     compare(view.selectedIndex, 0)
 
@@ -1082,6 +1094,7 @@ TestCase {
   function test_enterOnThePlusCardMakesTheNextWorkspace() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     view.selectedIndex = view.cellCount - 1
 
     keyClick(Qt.Key_Return)
@@ -1362,6 +1375,7 @@ TestCase {
       store: store,
       opener: opener
     })
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
@@ -1382,6 +1396,7 @@ TestCase {
       store: store,
       opener: opener
     })
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     compare(view.newWorkspaceId, 6)
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), findChild(view, "addWorkspaceCard"))
@@ -1522,6 +1537,7 @@ TestCase {
       store: store,
       opener: opener
     })
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
@@ -1744,6 +1760,51 @@ TestCase {
 
     compare(store.setups.Games.bootWorkspace, 4)
     compare(store.setups.Games.bootMonitor, "DP-2")
+  }
+
+  // The identity from the state file is what is remembered, so the setup
+  // still finds its monitor after a port change; the chip reads it back as
+  // this monitor's.
+  function test_assigningABootWorkspaceRemembersTheMonitorsIdentityWhenKnown() {
+    twoMonitors()
+    var store = makeStore({
+      Games: anArgvSetup(["games"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+    seedBlocks(view, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-4"))
+
+    compare(store.setups.Games.bootWorkspace, 4)
+    compare(store.setups.Games.bootMonitor, "Maker two")
+    compare(chipFor(view, "Games").bootHere, true)
+  }
+
+  // A setup saved by connector, before identities, still counts as this
+  // monitor's - and a slot it held is taken over by an identity-keyed save.
+  function test_aSetupSavedByConnectorStillCompetesWithOneSavedByIdentity() {
+    twoMonitors()
+    var store = makeStore({
+      Old: Object.assign(anArgvSetup(["old"]), {
+        bootWorkspace: 4,
+        bootMonitor: "DP-2"
+      }),
+      Games: anArgvSetup(["games"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+    seedBlocks(view, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+    compare(chipFor(view, "Old").bootHere, true)
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-4"))
+
+    compare(store.setups.Games.bootMonitor, "Maker two")
+    compare(store.setups.Old.bootWorkspace, null)
   }
 
   function test_aSlotTakenOnAnotherMonitorIsLeftAlone() {

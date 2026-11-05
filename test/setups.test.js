@@ -16,6 +16,8 @@ const {
   assignBootWorkspace,
   shouldRunBoot,
   bootEntries,
+  bootMonitorConnector,
+  bootMonitorValue,
   relativeRect,
   captureSetupWindows,
   parseProcCmdline
@@ -450,4 +452,93 @@ test("parseProcCmdline copes with a read that found nothing", () => {
   assert.deepEqual(parseProcCmdline(""), [])
   assert.deepEqual(parseProcCmdline(null), [])
   assert.deepEqual(parseProcCmdline(undefined), [])
+})
+
+test("bootMonitorConnector takes a connector that is plugged in", () => {
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"], {}), "DP-5")
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"]), "DP-5")
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"], { "DP-4": "Maker one", "DP-5": "Maker two" }), "DP-5")
+})
+
+test("bootMonitorConnector finds a monitor by its identity when the connector has changed", () => {
+  const identities = { "DP-4": "Maker one", "DP-9": "Maker two" }
+  assert.equal(bootMonitorConnector("Maker two", ["DP-4", "DP-9"], identities), "DP-9")
+  assert.equal(bootMonitorConnector("Maker one", ["DP-4", "DP-9"], identities), "DP-4")
+})
+
+test("bootMonitorConnector falls back to the connector when the identity matches nothing or is ambiguous", () => {
+  assert.equal(bootMonitorConnector("DP-5", ["DP-5"], { "DP-5": "Maker two" }), "DP-5")
+  assert.equal(bootMonitorConnector("Maker three", ["DP-4"], { "DP-4": "Maker one" }), "")
+  // Two identical monitors share an identity: it names neither of them.
+  assert.equal(bootMonitorConnector("Twin", ["DP-4", "DP-5"], { "DP-4": "Twin", "DP-5": "Twin" }), "")
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"], { "DP-4": "Twin", "DP-5": "Twin" }), "DP-5")
+})
+
+test("bootMonitorConnector is empty for no monitor wanted or none plugged in", () => {
+  assert.equal(bootMonitorConnector("", ["DP-4"], { "DP-4": "Maker" }), "")
+  assert.equal(bootMonitorConnector(null, ["DP-4"], {}), "")
+  assert.equal(bootMonitorConnector(undefined, ["DP-4"], {}), "")
+  assert.equal(bootMonitorConnector("DP-4", [], {}), "")
+  assert.equal(bootMonitorConnector("DP-4", null, null), "")
+  // An identity key that is only an object property, not a monitor.
+  assert.equal(bootMonitorConnector("constructor", ["constructor"], {}), "constructor")
+})
+
+test("bootMonitorValue is the identity when the state file knows one", () => {
+  assert.equal(bootMonitorValue("DP-5", { "DP-4": "Maker one", "DP-5": "Maker two" }), "Maker two")
+})
+
+test("bootMonitorValue stays the connector with no identity known", () => {
+  assert.equal(bootMonitorValue("DP-5", {}), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", null), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", undefined), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", { "DP-5": "" }), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", { "DP-5": 3 }), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", { "DP-4": "Maker one" }), "DP-5")
+  assert.equal(bootMonitorValue("constructor", {}), "constructor")
+  assert.equal(bootMonitorValue("", { "DP-4": "Maker one" }), "")
+  assert.equal(bootMonitorValue(null, {}), "")
+})
+
+test("bootMonitorValue leaves an identity as it is", () => {
+  assert.equal(bootMonitorValue("Maker two", { "DP-5": "Maker two" }), "Maker two")
+})
+
+test("assignBootWorkspace stores the monitor's identity when one is known", () => {
+  const next = assignBootWorkspace({ Work: aSetup([aWindow()]) }, "Work", 3, "DP-5", { "DP-5": "Maker two" })
+  assert.equal(next.Work.bootWorkspace, 3)
+  assert.equal(next.Work.bootMonitor, "Maker two")
+})
+
+test("assignBootWorkspace stores the connector when no identity is known", () => {
+  const setups = { Work: aSetup([aWindow()]) }
+  assert.equal(assignBootWorkspace(setups, "Work", 3, "DP-5").Work.bootMonitor, "DP-5")
+  assert.equal(assignBootWorkspace(setups, "Work", 3, "DP-5", {}).Work.bootMonitor, "DP-5")
+  assert.equal(assignBootWorkspace(setups, "Work", 3, "DP-5", { "DP-4": "Maker one" }).Work.bootMonitor, "DP-5")
+})
+
+test("assignBootWorkspace treats a connector and its identity as the same monitor", () => {
+  const identities = { "DP-5": "Maker two" }
+  const old = { Old: aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: "DP-5" }), Work: aSetup([aWindow()]) }
+  const next = assignBootWorkspace(old, "Work", 3, "DP-5", identities)
+  assert.equal(next.Old.bootWorkspace, null)
+  assert.equal(next.Work.bootMonitor, "Maker two")
+
+  const byIdentity = { Old: aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: "Maker two" }), Work: aSetup([aWindow()]) }
+  assert.equal(assignBootWorkspace(byIdentity, "Work", 3, "DP-5", identities).Old.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(byIdentity, "Work", 3, "DP-4", identities).Old.bootWorkspace, 3)
+})
+
+test("a setup saved by identity still boots on its monitor after a port change", () => {
+  const saved = assignBootWorkspace({ Work: aSetup([aWindow()]) }, "Work", 2, "DP-5", { "DP-5": "Maker two" })
+  const [entry] = bootEntries(saved)
+  assert.equal(entry.monitor, "Maker two")
+  // The monitor is now on DP-9.
+  assert.equal(bootMonitorConnector(entry.monitor, ["DP-4", "DP-9"], { "DP-4": "Maker one", "DP-9": "Maker two" }), "DP-9")
+})
+
+test("a setup saved before identities still boots by its connector", () => {
+  const [entry] = bootEntries({ Work: aSetup([aWindow()], { bootWorkspace: 2, bootMonitor: "DP-5" }) })
+  assert.equal(bootMonitorConnector(entry.monitor, ["DP-4", "DP-5"], { "DP-4": "Maker one", "DP-5": "Maker two" }), "DP-5")
+  assert.equal(bootMonitorConnector(entry.monitor, ["DP-4", "DP-5"], {}), "DP-5")
 })

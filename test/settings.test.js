@@ -21,6 +21,8 @@ const {
   slotOf,
   workspaceIdFor,
   parseMonitorBlocks,
+  parseMonitorIdentities,
+  perMonitorActive,
   monitorBlock,
   focusWorkspaceRequest
 } = require("../js/settings.js")
@@ -370,19 +372,51 @@ test("monitorBlock does not mistake an object property for a monitor", () => {
 })
 
 test("focusWorkspaceRequest focuses a monitor's own workspace by slot and monitor name", () => {
-  assert.equal(focusWorkspaceRequest(3, 0, "DP-4"), 'o.workspaces.focus(3, "DP-4")')
-  assert.equal(focusWorkspaceRequest(10, 0, "DP-4"), 'o.workspaces.focus(10, "DP-4")')
-  assert.equal(focusWorkspaceRequest(12, 1, "DP-5"), 'o.workspaces.focus(2, "DP-5")')
+  assert.equal(focusWorkspaceRequest(3, 0, "DP-4", true), 'o.workspaces.focus(3, "DP-4")')
+  assert.equal(focusWorkspaceRequest(10, 0, "DP-4", true), 'o.workspaces.focus(10, "DP-4")')
+  assert.equal(focusWorkspaceRequest(12, 1, "DP-5", true), 'o.workspaces.focus(2, "DP-5")')
 })
 
 test("focusWorkspaceRequest focuses a visiting workspace by its Hyprland id", () => {
-  assert.equal(focusWorkspaceRequest(3, 1, "DP-5"), 'hl.dsp.focus({ workspace = "3" })')
-  assert.equal(focusWorkspaceRequest(21, 0, "DP-4"), 'hl.dsp.focus({ workspace = "21" })')
+  assert.equal(focusWorkspaceRequest(3, 1, "DP-5", true), 'hl.dsp.focus({ workspace = "3" })')
+  assert.equal(focusWorkspaceRequest(21, 0, "DP-4", true), 'hl.dsp.focus({ workspace = "21" })')
 })
 
 test("focusWorkspaceRequest copes with no monitor name yet", () => {
-  assert.equal(focusWorkspaceRequest(2, 0, ""), 'o.workspaces.focus(2, "")')
-  assert.equal(focusWorkspaceRequest(2, 0, undefined), 'o.workspaces.focus(2, "")')
+  assert.equal(focusWorkspaceRequest(2, 0, "", true), 'o.workspaces.focus(2, "")')
+  assert.equal(focusWorkspaceRequest(2, 0, undefined, true), 'o.workspaces.focus(2, "")')
+})
+
+test("focusWorkspaceRequest keeps the old hl.dsp.focus request when no state file was loaded", () => {
+  // Omarchy before 4.5 has no o.workspaces, so nothing may call it.
+  assert.equal(focusWorkspaceRequest(3, 0, "DP-4", false), 'hl.dsp.focus({ workspace = "3" })')
+  assert.equal(focusWorkspaceRequest(12, 1, "DP-5", false), 'hl.dsp.focus({ workspace = "12" })')
+  assert.equal(focusWorkspaceRequest(3, 0, "DP-4"), 'hl.dsp.focus({ workspace = "3" })')
+  assert.equal(focusWorkspaceRequest(3, 0, "DP-4", undefined), 'hl.dsp.focus({ workspace = "3" })')
+  assert.equal(focusWorkspaceRequest(3, 0, "DP-4", "yes"), 'hl.dsp.focus({ workspace = "3" })')
+})
+
+test("parseMonitorIdentities keeps the identity column by connector", () => {
+  const text = "0\tDP-4\tLG Electronics LG HDR 4K 0x00\n1\tDP-5\tDell Inc. DELL S2722QC 7NWWLD3\r\n"
+  assert.deepEqual(parseMonitorIdentities(text), { "DP-4": "LG Electronics LG HDR 4K 0x00", "DP-5": "Dell Inc. DELL S2722QC 7NWWLD3" })
+  assert.deepEqual(parseMonitorIdentities("12\teDP-1\tAU Optronics 0x1\textra\tfields"), { "eDP-1": "AU Optronics 0x1" })
+})
+
+test("parseMonitorIdentities skips what parseMonitorBlocks skips, and an empty identity", () => {
+  assert.deepEqual(parseMonitorIdentities("1\tDP-5"), {})
+  assert.deepEqual(parseMonitorIdentities("x\tDP-5\tid"), {})
+  assert.deepEqual(parseMonitorIdentities("0\tDP-4\t\n1\tDP-5\tid"), { "DP-5": "id" })
+  assert.deepEqual(parseMonitorIdentities(null), {})
+})
+
+test("perMonitorActive is true only once the state file has put a monitor in blocks", () => {
+  assert.equal(perMonitorActive({ "DP-4": 0 }), true)
+  assert.equal(perMonitorActive(parseMonitorBlocks("0\tDP-4\tid")), true)
+  assert.equal(perMonitorActive({}), false)
+  assert.equal(perMonitorActive(parseMonitorBlocks("")), false)
+  assert.equal(perMonitorActive(parseMonitorBlocks("1\tDP-5")), false)
+  assert.equal(perMonitorActive(null), false)
+  assert.equal(perMonitorActive(undefined), false)
 })
 
 test("workspaceLabels accepts a JSON array and rejects anything else", () => {

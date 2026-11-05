@@ -25,6 +25,13 @@ Item {
   // Connector -> block, as parseMonitorBlocks reads it. Empty until the file
   // has loaded, and again if it goes missing.
   property var blocks: ({})
+  // Connector -> identity (make, model, serial), from the same file; the
+  // identity stays the same when the connector does not.
+  property var identities: ({})
+  // Whether the file was loaded with monitors in it, i.e. this Omarchy
+  // (4.5 and later) has per-monitor workspaces. Without it there is no
+  // `o.workspaces` to call, and workspaces are focused by id as before.
+  readonly property bool perMonitor: Settings.perMonitorActive(root.blocks)
   readonly property int block: Settings.monitorBlock(root.blocks, root.monitorName, root.activeWorkspaceId)
 
   // Not `readonly`: a test points it at a throwaway path.
@@ -36,7 +43,13 @@ Item {
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.blocks = Settings.parseMonitorBlocks(text())
-    onLoadFailed: root.blocks = ({})
+    onLoaded: {
+      root.blocks = Settings.parseMonitorBlocks(text())
+      root.identities = Settings.parseMonitorIdentities(text())
+    }
+    onLoadFailed: {
+      root.blocks = ({})
+      root.identities = ({})
+    }
   }
 }

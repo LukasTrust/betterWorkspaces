@@ -96,12 +96,19 @@ Item {
   // no "workspace you were already on" to fall back to either, so it is the
   // least arbitrary guess, same fallback `Overview.qml` uses for its own "+"
   // card.
+  //
+  // `entry.monitor` is a connector or, so that a dock or a port change does
+  // not lose it, the monitor's identity from the monitor-workspaces file.
   function monitorFor(entry) {
     if (entry.monitor.length > 0) {
       var values = Hyprland.monitors.values
+      var names = []
       for (var i = 0; i < values.length; i++)
-        if (values[i].name === entry.monitor)
-          return values[i]
+        names.push(values[i].name)
+      var connector = Setups.bootMonitorConnector(entry.monitor, names, monitorBlocks.identities)
+      for (var j = 0; j < values.length; j++)
+        if (connector.length > 0 && values[j].name === connector)
+          return values[j]
     }
     return Hyprland.focusedMonitor
   }
@@ -113,6 +120,16 @@ Item {
       return entry.slot
     var active = monitor.activeWorkspace ? monitor.activeWorkspace.id : 0
     return Settings.workspaceIdFor(Settings.monitorBlock(monitorBlocks.blocks, monitor.name, active), entry.slot)
+  }
+
+  // The same request the bar and the overview send, so a workspace that
+  // does not exist yet is made on the right monitor rather than on
+  // whichever one has focus.
+  function focusRequestFor(entry, monitor) {
+    var id = root.workspaceIdFor(entry, monitor)
+    if (!monitor)
+      return Settings.focusWorkspaceRequest(id, 0, "", false)
+    return Settings.focusWorkspaceRequest(id, Settings.blockOf(id), monitor.name, monitorBlocks.perMonitor)
   }
 
   function monitorArea(monitor) {
@@ -150,7 +167,7 @@ Item {
     // the same focus-first dance for the interactive path, and boot has no
     // "workspace you're already on" to lean on instead.
     var monitor = root.monitorFor(entry)
-    root.dispatch("hl.dsp.focus({ workspace = \"" + root.workspaceIdFor(entry, monitor) + "\" })")
+    root.dispatch(root.focusRequestFor(entry, monitor))
     setupOpener.open(setup, root.monitorArea(monitor))
   }
 

@@ -103,11 +103,12 @@ BarWidget {
   }
 
   // One of this monitor's own workspaces is focused by slot and monitor name,
-  // so Hyprland puts it on this monitor; a visiting one, by its id.
+  // so Hyprland puts it on this monitor; a visiting one, by its id - as is
+  // everything on an Omarchy without per-monitor workspaces.
   function focusWorkspace(id) {
     if (!root.bar)
       return
-    root.bar.run("hyprctl dispatch " + Util.shellQuote(Settings.focusWorkspaceRequest(id, root.block, root.monitorName)))
+    root.bar.run("hyprctl dispatch " + Util.shellQuote(Settings.focusWorkspaceRequest(id, root.block, root.monitorName, monitorBlocks.perMonitor)))
   }
 
   // Clicking a workspace you are not on switches to it; clicking the one you

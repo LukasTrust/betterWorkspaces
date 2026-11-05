@@ -260,7 +260,7 @@ TestCase {
       Work: work
     })
 
-    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"13\" })"])
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(3, \"DP-2\")"])
     compare(Quickshell.testExecuted, [["work-app"]])
   }
 
@@ -277,9 +277,9 @@ TestCase {
       Right: right
     })
 
-    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })"])
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(1, \"DP-1\")"])
     insertToplevel("1")
-    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })", "hl.dsp.focus({ workspace = \"11\" })"])
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(1, \"DP-1\")", "o.workspaces.focus(1, \"DP-2\")"])
   }
 
   function test_aSetupWithNoMonitorGoesToTheFocusedMonitor() {
@@ -293,7 +293,43 @@ TestCase {
       Work: anArgvSetup(["work-app"], 2)
     })
 
-    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"12\" })"])
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(2, \"DP-2\")"])
+  }
+
+  // The connector in a saved setup goes stale when the monitor moves to
+  // another port; the identity in the state file does not.
+  function test_aBootMonitorGivenByIdentityFindsItsMonitorOnAnotherConnector() {
+    var first = makeNamedMonitor("DP-1", 0)
+    var second = makeNamedMonitor("DP-7", 1920)
+    Hyprland.monitors.values = [first, second]
+    Hyprland.focusedMonitor = first
+    var service = makeService()
+    seedBlocks(service, "0\tDP-1\tMaker one\n1\tDP-7\tMaker two\n")
+    var work = anArgvSetup(["work-app"], 3)
+    work.bootMonitor = "Maker two"
+    seedSetups(service, {
+      Work: work
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(3, \"DP-7\")"])
+    compare(service.monitorFor({ monitor: "Maker two", slot: 3 }), second)
+    compare(service.monitorFor({ monitor: "DP-1", slot: 3 }), first)
+  }
+
+  // On an Omarchy without the state file `o.workspaces` does not exist, so
+  // boot focuses by id as it always did.
+  function test_withoutTheStateFileBootFocusesByIdNotByOWorkspaces() {
+    var monitor = makeNamedMonitor("DP-1", 0)
+    Hyprland.monitors.values = [monitor]
+    Hyprland.focusedMonitor = monitor
+    var service = makeService()
+    var work = anArgvSetup(["work-app"], 4)
+    work.bootMonitor = "DP-1"
+    seedSetups(service, {
+      Work: work
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"4\" })"])
   }
 
   function test_aMonitorThatIsNotPluggedInFallsBackToTheFocusedOne() {
@@ -308,7 +344,7 @@ TestCase {
       Work: work
     })
 
-    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"3\" })"])
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(3, \"DP-1\")"])
     compare(service.monitorFor({ monitor: "DP-2", slot: 3 }), first)
   }
 

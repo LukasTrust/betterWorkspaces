@@ -230,10 +230,11 @@ Item {
   }
 
   // `slot` is 1-10 within this monitor's block (0 for "off"); the setup
-  // remembers the monitor too, so boot opens it on this one.
+  // remembers the monitor too, so boot opens it on this one - by its
+  // identity where the state file gives one, which a port change leaves be.
   function setBootWorkspace(name, slot) {
     if (root.store)
-      root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, name, slot, root.monitorName))
+      root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, name, slot, root.monitorName, monitorBlocks.identities))
     root.bootPopoverFor = ""
   }
 
@@ -365,7 +366,7 @@ Item {
   // Hyprland puts a new one on this monitor.
   function focusWorkspace(id) {
     if (id > 0 && id !== root.focusedId)
-      root.dispatch(Settings.focusWorkspaceRequest(id, root.block, root.monitorName))
+      root.dispatch(Settings.focusWorkspaceRequest(id, root.block, root.monitorName, monitorBlocks.perMonitor))
   }
 
   function moveWindowRequest(address, id) {
@@ -1435,7 +1436,7 @@ Item {
             // Whether that boot slot is on this monitor: a setup booting on
             // another monitor keeps its badge, but none of this monitor's
             // slots in the picker is marked as its own.
-            readonly property bool bootHere: chipSlot.bootWorkspace > 0 && (!chipSlot.setupEntry.bootMonitor || chipSlot.setupEntry.bootMonitor === root.monitorName)
+            readonly property bool bootHere: chipSlot.bootWorkspace > 0 && (!chipSlot.setupEntry.bootMonitor || Setups.bootMonitorConnector(chipSlot.setupEntry.bootMonitor, [root.monitorName], monitorBlocks.identities) === root.monitorName)
             readonly property bool bootPopoverOpen: root.bootPopoverFor === chipSlot.modelData
 
             // The thing that actually moves under the pointer while

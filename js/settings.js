@@ -235,21 +235,47 @@ function workspaceIdFor(block, slot) {
 
 // Hyprland writes which block each monitor owns to
 // $XDG_STATE_HOME/omarchy/monitor-workspaces, one line per monitor:
-// `<block>\t<connector>\t<identity>`. This reads that text into
-// { connector: block }. The file is rewritten by Hyprland and read while it
-// may be half there, so a line that is not three fields, or whose block is
-// not a number, is skipped rather than guessed at.
-function parseMonitorBlocks(text) {
-  var blocks = {}
+// `<block>\t<connector>\t<identity>`. The identity is the monitor's make,
+// model and serial, which - unlike the connector - survives a dock or a
+// port change. The file is rewritten by Hyprland and read while it may be
+// half there, so a line that is not three fields, or whose block is not a
+// number, is skipped rather than guessed at.
+function parseMonitorLines(text) {
+  var entries = []
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
     var fields = lines[i].split("\t")
     if (fields.length < 3 || fields[1] === "") continue
     var block = parseInt(fields[0], 10)
     if (isNaN(block) || block < 0) continue
-    blocks[fields[1]] = block
+    entries.push({ block: block, connector: fields[1], identity: fields[2].replace(/\r$/, "") })
   }
+  return entries
+}
+
+// The state file read into { connector: block }.
+function parseMonitorBlocks(text) {
+  var blocks = {}
+  var entries = parseMonitorLines(text)
+  for (var i = 0; i < entries.length; i++) blocks[entries[i].connector] = entries[i].block
   return blocks
+}
+
+// The state file read into { connector: identity }, for the lines that carry
+// one.
+function parseMonitorIdentities(text) {
+  var identities = {}
+  var entries = parseMonitorLines(text)
+  for (var i = 0; i < entries.length; i++)
+    if (entries[i].identity !== "") identities[entries[i].connector] = entries[i].identity
+  return identities
+}
+
+// Whether the state file was loaded with anything in it, i.e. whether this
+// Omarchy gives every monitor a block of its own. Before 4.5 there is no
+// such file, and the widget has to behave as it always did.
+function perMonitorActive(blocks) {
+  return !!blocks && Object.keys(blocks).length > 0
 }
 
 // The block a monitor shows. The state file is the truth; until Hyprland has
@@ -263,12 +289,14 @@ function monitorBlock(blocks, monitorName, activeWorkspaceId) {
 }
 
 // The Lua that focuses workspace `id` from the bar or the overview of the
-// monitor that owns `block`. One of that monitor's own workspaces is named by
-// its slot and monitor, which is what Omarchy's `o.workspaces.focus` takes;
-// a visiting workspace from another block has no slot on this monitor, so it
-// is focused by its Hyprland id.
-function focusWorkspaceRequest(id, block, monitorName) {
-  if (blockOf(id) === Number(block))
+// monitor that owns `block`. With per-monitor workspaces (`perMonitor`, see
+// `perMonitorActive`), one of that monitor's own workspaces is named by its
+// slot and monitor, which is what Omarchy's `o.workspaces.focus` takes; a
+// visiting workspace from another block has no slot on this monitor, so it
+// is focused by its Hyprland id. Without them - Omarchy before 4.5 has no
+// `o.workspaces` at all - every workspace is focused by its id.
+function focusWorkspaceRequest(id, block, monitorName, perMonitor) {
+  if (perMonitor === true && blockOf(id) === Number(block))
     return "o.workspaces.focus(" + slotOf(id) + ", \"" + String(monitorName || "") + "\")"
   return "hl.dsp.focus({ workspace = \"" + id + "\" })"
 }
@@ -374,6 +402,8 @@ if (typeof module !== "undefined") {
     slotOf: slotOf,
     workspaceIdFor: workspaceIdFor,
     parseMonitorBlocks: parseMonitorBlocks,
+    parseMonitorIdentities: parseMonitorIdentities,
+    perMonitorActive: perMonitorActive,
     monitorBlock: monitorBlock,
     focusWorkspaceRequest: focusWorkspaceRequest,
     computeWorkspaceIds: computeWorkspaceIds,

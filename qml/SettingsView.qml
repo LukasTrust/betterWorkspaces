@@ -54,6 +54,13 @@ Item {
     root.renameErrorFor = ""
   }
 
+  // Connector -> identity, so a boot monitor is saved by the identity that
+  // survives a port change (see `Setups.bootMonitorValue`).
+  MonitorBlocks {
+    id: monitorBlocks
+    objectName: "monitorBlocks"
+  }
+
   // The monitor a boot workspace number is on: the one the setup was already
   // assigned to, so changing the number here doesn't move it; otherwise the
   // monitor that has focus, which is where this form is open.
@@ -321,7 +328,7 @@ Item {
               foreground: Color.menu.text
               Layout.preferredWidth: Style.spacing.numberFieldWidth
               onModified: function (value) {
-                root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, setupRow.modelData, value, root.bootMonitorFor(setupRow.modelData)))
+                root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, setupRow.modelData, value, root.bootMonitorFor(setupRow.modelData), monitorBlocks.identities))
               }
             }
           }

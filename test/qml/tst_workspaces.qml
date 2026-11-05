@@ -368,6 +368,7 @@ TestCase {
   function test_clickingAWorkspaceFocusesIt() {
     makeMonitor("DP-1", null, true)
     var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
     mouseClick(cellFor(widget, 3))
     compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-1\")'"])
   }
@@ -397,10 +398,20 @@ TestCase {
     var widget = createWidget({
       overviewEnabled: false
     })
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
 
     mouseClick(cellFor(widget, 3))
     compare(fakeShell.testToggled, [])
     compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-1\")'"])
+  }
+
+  // Omarchy before 4.5 has no state file and no `o.workspaces`, so focusing
+  // has to stay a plain workspace focus by id.
+  function test_withoutTheStateFileClickingFocusesByIdNotByOWorkspaces() {
+    makeMonitor("DP-1", null, true)
+    var widget = createWidget()
+    mouseClick(cellFor(widget, 3))
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
   }
 
   // Only the workspace you are on; every other one still just switches.
@@ -409,6 +420,7 @@ TestCase {
     Hyprland.workspaces.values = [focusedWorkspace]
     makeMonitor("DP-1", focusedWorkspace, true)
     var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
 
     mouseClick(cellFor(widget, 1))
     compare(fakeShell.testToggled, [])
@@ -431,6 +443,7 @@ TestCase {
     Hyprland.workspaces.values = [makeWorkspace(3, [makeWindow("foot")])]
     makeMonitor("DP-1", null, true)
     var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
     mouseClick(findChild(cellFor(widget, 3), "workspaceLabel"))
     compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-1\")'"])
   }

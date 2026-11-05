@@ -181,18 +181,24 @@ function remainingCloseTargets(pending, currentAddresses) {
 // over just refusing the change. A setup with no monitor means "the monitor
 // that has focus at boot", which could be any, so it competes for the slot
 // with every other setup.
-function assignBootWorkspace(setups, name, slot, monitor) {
+//
+// `monitor` is a connector or an identity; it is stored as the monitor's
+// identity when `identities` ({ connector: identity }) knows one, and as
+// given otherwise (see `bootMonitorValue`). Slots are compared the same way,
+// so a setup saved with a connector still competes with one saved with that
+// monitor's identity.
+function assignBootWorkspace(setups, name, slot, monitor, identities) {
   var current = setups || {}
   var target = Number(slot) || 0
   if (target < 1 || target > 10) target = 0
-  var where = String(monitor || "")
+  var where = bootMonitorValue(monitor, identities)
 
   var next = {}
   for (var key in current) {
     var entry = current[key] || {}
     var copy = {}
     for (var field in entry) copy[field] = entry[field]
-    var there = String(copy.bootMonitor || "")
+    var there = bootMonitorValue(copy.bootMonitor, identities)
     if (target > 0 && key !== name && copy.bootWorkspace === target && (there === where || there === "" || where === "")) {
       copy.bootWorkspace = null
       copy.bootMonitor = null
@@ -248,6 +254,45 @@ function bootEntries(setups) {
     return a.slot - b.slot
   })
   return entries
+}
+
+// What goes into a setup's `bootMonitor` for the monitor on `connector`: its
+// identity from Hyprland's monitor-workspaces file (`identities`,
+// { connector: identity }) when that has one, since the identity outlives a
+// dock or a port change, and the connector itself when it does not - Omarchy
+// before 4.5 has no such file. A value that is not a connector in the map,
+// an identity already, comes back as it is.
+function bootMonitorValue(connector, identities) {
+  var name = String(connector || "")
+  var known = identities || {}
+  if (Object.prototype.hasOwnProperty.call(known, name) && typeof known[name] === "string" && known[name] !== "")
+    return known[name]
+  return name
+}
+
+// The connector of the monitor a boot entry is for, out of the connectors
+// plugged in now (`connectors`, names). `wanted` is the entry's `bootMonitor`:
+// a connector like "DP-5", which changes when the monitor moves to another
+// port or dock, or the monitor's identity from Hyprland's monitor-workspaces
+// file (`identities`, { connector: identity }), which does not. An identity
+// that names exactly one monitor plugged in wins; anything else is taken as a
+// connector, which is also all a file from before identities holds. "" when
+// no monitor matches.
+function bootMonitorConnector(wanted, connectors, identities) {
+  var name = typeof wanted === "string" ? wanted : ""
+  if (name === "") return ""
+  var list = connectors || []
+  var known = identities || {}
+  var found = ""
+  var count = 0
+  for (var i = 0; i < list.length; i++) {
+    if (Object.prototype.hasOwnProperty.call(known, list[i]) && known[list[i]] === name) {
+      found = list[i]
+      count++
+    }
+  }
+  if (count === 1) return found
+  return list.indexOf(name) !== -1 ? name : ""
 }
 
 // A window's rectangle scaled into 0..1 relative to the workspace area it
@@ -340,6 +385,8 @@ if (typeof module !== "undefined") {
     assignBootWorkspace: assignBootWorkspace,
     shouldRunBoot: shouldRunBoot,
     bootEntries: bootEntries,
+    bootMonitorValue: bootMonitorValue,
+    bootMonitorConnector: bootMonitorConnector,
     relativeRect: relativeRect,
     captureSetupWindows: captureSetupWindows,
     parseProcCmdline: parseProcCmdline

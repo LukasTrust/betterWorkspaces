@@ -456,6 +456,24 @@ TestCase {
     compare(store.setups.Work.bootMonitor, "DP-2")
   }
 
+  // A connector changes with a dock or a port; the identity in the state
+  // file does not, so that is what gets saved when there is one.
+  function test_editingABootFieldRecordsTheFocusedMonitorsIdentityWhenKnown() {
+    Hyprland.focusedMonitor = createTemporaryObject(monitorComponent, testCase, {
+      name: "DP-2"
+    })
+    var store = makeStore({
+      Work: aSetup(null)
+    })
+    var view = createView({}, store)
+    findChild(view, "monitorBlocksFile").testSetContent("0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+
+    findChild(findChild(view, "boot-Work"), "bootField").testType(4)
+
+    compare(store.setups.Work.bootWorkspace, 4)
+    compare(store.setups.Work.bootMonitor, "Maker two")
+  }
+
   // Changing the number is not moving the setup to another monitor.
   function test_editingABootFieldKeepsTheMonitorTheSetupWasAssignedOn() {
     Hyprland.focusedMonitor = createTemporaryObject(monitorComponent, testCase, {
