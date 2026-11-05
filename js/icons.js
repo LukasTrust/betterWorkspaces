@@ -332,12 +332,24 @@ function matchesSearchQuery(title, windowClass, query) {
   return String(windowClass || "").toLowerCase().indexOf(q) !== -1
 }
 
+// Whether a text icon (a user override's glyph) is narrow enough to draw in
+// a `slotWidth` icon slot. An emoji or Nerd Font glyph runs a little wider
+// than its font size, so some slack is allowed; a word is several times
+// wider and would spill over the neighbouring icons (issue #10), so the
+// caller shows the default icon instead.
+var TEXT_ICON_MAX_WIDTH_RATIO = 1.5
+
+function textIconFits(textWidth, slotWidth) {
+  return Number(textWidth) <= Number(slotWidth) * TEXT_ICON_MAX_WIDTH_RATIO
+}
+
 // Node, for the unit tests. In QML this branch is never taken - the file is
 // imported as a plain JavaScript resource, and `module` doesn't exist there.
 if (typeof module !== "undefined") {
   module.exports = {
     computeWindowKey: computeWindowKey,
     classifyIconValue: classifyIconValue,
+    textIconFits: textIconFits,
     lookupIconOverride: lookupIconOverride,
     steamAppId: steamAppId,
     parseWebAppClass: parseWebAppClass,
