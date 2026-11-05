@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 
+import "../js/settings.js" as Settings
 import "../js/setups.js" as Setups
 
 // Runs once when the shell starts: opens whichever saved setups are
@@ -81,17 +82,54 @@ Item {
     }
   }
 
-  function monitorFor(workspaceId) {
-    var values = Hyprland.workspaces.values
-    for (var i = 0; i < values.length; i++)
-      if (values[i].id === workspaceId)
-        return values[i].monitor
-    // The workspace doesn't exist yet - boot is the one time there is no
-    // "workspace you were already on" to fall back to either, so the
-    // focused monitor (whichever Hyprland put the cursor on at startup) is
-    // the least arbitrary guess, same fallback `Overview.qml` uses for its
-    // own "+" card.
+  // Which block of ten workspaces each monitor owns, from the file Hyprland
+  // keeps them in - a setup is assigned slot 1-10 of a monitor's block, and
+  // only this says which Hyprland workspace that is.
+  MonitorBlocks {
+    id: monitorBlocks
+    objectName: "monitorBlocks"
+  }
+
+  // The monitor a boot entry is for. A setup with none assigned, or whose
+  // monitor is not plugged in now, goes to the focused monitor (whichever
+  // Hyprland put the cursor on at startup): boot is the one time there is
+  // no "workspace you were already on" to fall back to either, so it is the
+  // least arbitrary guess, same fallback `Overview.qml` uses for its own "+"
+  // card.
+  //
+  // `entry.monitor` is a connector or, so that a dock or a port change does
+  // not lose it, the monitor's identity from the monitor-workspaces file.
+  function monitorFor(entry) {
+    if (entry.monitor.length > 0) {
+      var values = Hyprland.monitors.values
+      var names = []
+      for (var i = 0; i < values.length; i++)
+        names.push(values[i].name)
+      var connector = Setups.bootMonitorConnector(entry.monitor, names, monitorBlocks.identities)
+      for (var j = 0; j < values.length; j++)
+        if (connector.length > 0 && values[j].name === connector)
+          return values[j]
+    }
     return Hyprland.focusedMonitor
+  }
+
+  // The Hyprland workspace a boot entry's slot is on that monitor. With no
+  // monitor known at all, block 0 - the one a single monitor has.
+  function workspaceIdFor(entry, monitor) {
+    if (!monitor)
+      return entry.slot
+    var active = monitor.activeWorkspace ? monitor.activeWorkspace.id : 0
+    return Settings.workspaceIdFor(Settings.monitorBlock(monitorBlocks.blocks, monitor.name, active), entry.slot)
+  }
+
+  // The same request the bar and the overview send, so a workspace that
+  // does not exist yet is made on the right monitor rather than on
+  // whichever one has focus.
+  function focusRequestFor(entry, monitor) {
+    var id = root.workspaceIdFor(entry, monitor)
+    if (!monitor)
+      return Settings.focusWorkspaceRequest(id, 0, "", false)
+    return Settings.focusWorkspaceRequest(id, Settings.blockOf(id), monitor.name, monitorBlocks.perMonitor)
   }
 
   function monitorArea(monitor) {
@@ -128,8 +166,9 @@ Item {
     // maps, not wherever it was launched "for" - `Overview.openSetup` does
     // the same focus-first dance for the interactive path, and boot has no
     // "workspace you're already on" to lean on instead.
-    root.dispatch("hl.dsp.focus({ workspace = \"" + entry.workspaceId + "\" })")
-    setupOpener.open(setup, root.monitorArea(root.monitorFor(entry.workspaceId)))
+    var monitor = root.monitorFor(entry)
+    root.dispatch(root.focusRequestFor(entry, monitor))
+    setupOpener.open(setup, root.monitorArea(monitor))
   }
 
   function runBoot() {

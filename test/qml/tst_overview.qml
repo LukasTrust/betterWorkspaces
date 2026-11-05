@@ -150,6 +150,44 @@ TestCase {
     }
   }
 
+  // Two monitors, each with a block of ten workspaces of its own (DP-1 has
+  // 1-10, DP-2 has 11-20), DP-2 being the one with focus and 12 the workspace
+  // it shows. 21 is a workspace from a block nobody is showing any more,
+  // visiting DP-2; 3 is DP-1's. Hyprland's state file is seeded to match.
+  function twoMonitors() {
+    var first = makeMonitor()
+    var second = createTemporaryObject(monitorComponent, testCase, {
+      id: 1,
+      name: "DP-2",
+      x: 1920,
+      y: 0,
+      width: 2560,
+      height: 1440,
+      focused: true
+    })
+    Hyprland.monitors.values = [first, second]
+    Hyprland.focusedMonitor = second
+
+    var elsewhere = makeWorkspace(3, [makeWindow("foot", "Elsewhere", [0, 0], [1920, 1080])], first)
+    var shown = makeWorkspace(12, [makeWindow("firefox", "A Browser", [1920, 0], [1280, 1440])], second)
+    var visitor = makeWorkspace(21, [makeWindow("code", "An Editor", [1920, 0], [1280, 1440])], second)
+    second.activeWorkspace = shown
+    first.activeWorkspace = elsewhere
+    Hyprland.workspaces.values = [elsewhere, shown, visitor]
+    Hyprland.focusedWorkspace = shown
+    return {
+      first: first,
+      second: second,
+      elsewhere: elsewhere,
+      shown: shown,
+      visitor: visitor
+    }
+  }
+
+  function seedBlocks(view, text) {
+    findChild(view, "monitorBlocksFile").testSetContent(text)
+  }
+
   function makeStore(setups) {
     var store = createTemporaryObject(storeComponent, testCase)
     findChild(store, "setupsFile").testSetContent(JSON.stringify({
@@ -575,10 +613,11 @@ TestCase {
   function test_clickingPlusOpensThatWorkspaceAndCloses() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     mouseClick(findChild(view, "addCardMouseArea"))
-    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"6\" })"])
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(6, \"DP-1\")"])
     tryCompare(closeSpy, "count", 1)
   }
 
@@ -592,6 +631,148 @@ TestCase {
 
     mouseClick(findChild(view, "addCardMouseArea"))
     compare(Hyprland.testDispatched, [])
+  }
+
+  // ---- one block of workspaces per monitor ------------------------------------
+  //
+  // The overview opens on the focused monitor and shows that monitor's block,
+  // numbered 1-10 like its bar.
+
+  function test_showsOnlyTheFocusedMonitorsBlock() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 1)
+    compare(view.monitorName, "DP-2")
+    // 3 is DP-1's and stays off; 21 is a visitor, after the monitor's own.
+    compare(cardIds(view), [11, 12, 13, 14, 15, 21])
+  }
+
+  function test_numbersTheCardsByTheirSlot() {
+    twoMonitors()
+    var view = createOverview({
+      minWorkspaces: 10
+    })
+    seedBlocks(view, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 1)
+    compare(findChild(cardFor(view, 11), "cardCaption").text, "1")
+    compare(findChild(cardFor(view, 12), "cardCaption").text, "2")
+    compare(findChild(cardFor(view, 20), "cardCaption").text, "0")
+    compare(findChild(cardFor(view, 21), "cardCaption").text, "1")
+  }
+
+  function test_theLabelListNamesCardsBySlot() {
+    twoMonitors()
+    var view = createOverview({
+      workspaceLabels: "a, b"
+    })
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 1)
+    compare(findChild(cardFor(view, 11), "cardCaption").text, "a")
+    compare(findChild(cardFor(view, 12), "cardCaption").text, "b")
+    compare(findChild(cardFor(view, 13), "cardCaption").text, "3")
+  }
+
+  function test_marksTheWorkspaceTheFocusedMonitorShows() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 1)
+    compare(cardFor(view, 12).focused, true)
+    compare(cardFor(view, 11).focused, false)
+  }
+
+  function test_withoutTheStateFileTheBlockIsTheOneOfTheMonitorsActiveWorkspace() {
+    twoMonitors()
+    var view = createOverview()
+
+    compare(view.block, 1)
+    compare(cardIds(view), [11, 12, 13, 14, 15, 21])
+  }
+
+  function test_followsTheStateFileWhenItChanges() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "2\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 2)
+    // What DP-2 is showing (12) is no longer in its block, so it visits.
+    compare(cardIds(view), [21, 22, 23, 24, 25, 12])
+  }
+
+  function test_cardsAreTheShapeOfTheMonitorTheyAreOn() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 1)
+    compare(view.monitorFor(12).name, "DP-2")
+    compare(view.monitorFor(13).name, "DP-2", "a workspace that does not exist yet borrows the focused monitor")
+  }
+
+  function test_clickingACardOfTheMonitorFocusesItBySlot() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+    tryCompare(view, "block", 1)
+    closeSpy.target = view
+
+    view.openWorkspace(13)
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(3, \"DP-2\")"])
+    tryCompare(closeSpy, "count", 1)
+  }
+
+  function test_clickingAVisitingCardFocusesItByItsHyprlandId() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+    tryCompare(view, "block", 1)
+
+    view.openWorkspace(21)
+    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"21\" })"])
+  }
+
+  function test_plusOffersTheNextSlotOfTheMonitorAndFocusesItThere() {
+    twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+    tryCompare(view, "block", 1)
+
+    // The visitor (21) is not one of the monitor's own, so it does not count.
+    compare(view.newWorkspaceId, 16)
+    compare(findChild(findChild(view, "addCardSurface"), "cardCaption").text, "6")
+
+    mouseClick(findChild(view, "addCardMouseArea"))
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(6, \"DP-2\")"])
+  }
+
+  function test_plusBowsOutOnceSlotTenOfTheMonitorIsTaken() {
+    twoMonitors()
+    var view = createOverview({
+      minWorkspaces: 10
+    })
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+
+    tryCompare(view, "block", 1)
+    compare(view.newWorkspaceId, 0)
+    verify(!findChild(view, "addWorkspaceCard").available)
+  }
+
+  // A window is moved to a workspace by its Hyprland id: the move names the
+  // workspace, not a slot on whichever monitor has focus.
+  function test_movingAWindowNamesTheWorkspaceByItsHyprlandId() {
+    var fixture = twoMonitors()
+    var view = createOverview()
+    seedBlocks(view, "1\tDP-2\tMaker two\n")
+    tryCompare(view, "block", 1)
+
+    view.moveWindowToWorkspace(fixture.shown.toplevels.values[0], 13)
+    compare(Hyprland.testDispatched.length, 1)
+    verify(Hyprland.testDispatched[0].indexOf("workspace = \"13\"") !== -1, Hyprland.testDispatched[0])
   }
 
   // ---- previews -------------------------------------------------------------
@@ -748,13 +929,23 @@ TestCase {
     compare(Hyprland.testDispatched, [])
   }
 
-  function test_clickingACardOpensThatWorkspaceAndCloses() {
+  // Omarchy before 4.5 has no state file and no `o.workspaces`.
+  function test_withoutTheStateFileClickingACardFocusesByIdNotByOWorkspaces() {
     threeWorkspaces()
     var view = createOverview()
-    closeSpy.target = view
 
     mouseClick(findChild(cardFor(view, 3), "cardMouseArea"))
     compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+  }
+
+  function test_clickingACardOpensThatWorkspaceAndCloses() {
+    threeWorkspaces()
+    var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
+    closeSpy.target = view
+
+    mouseClick(findChild(cardFor(view, 3), "cardMouseArea"))
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(3, \"DP-1\")"])
     tryCompare(closeSpy, "count", 1)
   }
 
@@ -875,6 +1066,7 @@ TestCase {
   function test_arrowsAndHjklWalkTheCardsAndEnterOpensOne() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
     compare(view.selectedIndex, 0)
 
@@ -894,7 +1086,7 @@ TestCase {
     compare(view.selectedIndex, 2)
 
     keyClick(Qt.Key_Return)
-    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(3, \"DP-1\")"])
     tryCompare(closeSpy, "count", 1)
   }
 
@@ -902,10 +1094,11 @@ TestCase {
   function test_enterOnThePlusCardMakesTheNextWorkspace() {
     threeWorkspaces()
     var view = createOverview()
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     view.selectedIndex = view.cellCount - 1
 
     keyClick(Qt.Key_Return)
-    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"6\" })"])
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(6, \"DP-1\")"])
   }
 
   function test_showsWhichCardIsSelected() {
@@ -1182,11 +1375,12 @@ TestCase {
       store: store,
       opener: opener
     })
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
 
-    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(3, \"DP-1\")"])
     compare(Quickshell.testExecuted, [["some-tool"]])
     // Default focusAfterSetupDrop is true.
     tryCompare(closeSpy, "count", 1)
@@ -1202,11 +1396,12 @@ TestCase {
       store: store,
       opener: opener
     })
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     compare(view.newWorkspaceId, 6)
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), findChild(view, "addWorkspaceCard"))
 
-    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"6\" })"])
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(6, \"DP-1\")"])
     compare(Quickshell.testExecuted, [["some-tool"]])
   }
 
@@ -1342,10 +1537,11 @@ TestCase {
       store: store,
       opener: opener
     })
+    seedBlocks(view, "0\tDP-1\tMaker DP-1\n")
     closeSpy.target = view
 
     dragOnto(findChild(chipFor(view, "Work"), "setupChipHandle"), cardFor(view, 3))
-    compare(Hyprland.testDispatched, ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(Hyprland.testDispatched, ["o.workspaces.focus(3, \"DP-1\")"])
     compare(closeSpy.count, 0)
 
     // The compositor answers the focus dispatch above - the stub doesn't
@@ -1362,7 +1558,7 @@ TestCase {
 
     // `finished` only fires after the opener's settle pause past the last
     // (only) window - see `settleMs` on SetupOpener.
-    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"3\" })", "hl.dsp.focus({ workspace = \"2\" })"])
+    tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(3, \"DP-1\")", "o.workspaces.focus(2, \"DP-1\")"])
     compare(closeSpy.count, 0)
   }
 
@@ -1546,6 +1742,150 @@ TestCase {
 
     compare(store.setups.Games.bootWorkspace, 3)
     compare(store.setups.Work.bootWorkspace, null)
+  }
+
+  // The slot is relative to a monitor's block, so the setup remembers which
+  // monitor it was assigned on - boot would otherwise always land on one.
+  function test_assigningABootWorkspaceRemembersTheMonitor() {
+    twoMonitors()
+    var store = makeStore({
+      Games: anArgvSetup(["games"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-4"))
+
+    compare(store.setups.Games.bootWorkspace, 4)
+    compare(store.setups.Games.bootMonitor, "DP-2")
+  }
+
+  // The identity from the state file is what is remembered, so the setup
+  // still finds its monitor after a port change; the chip reads it back as
+  // this monitor's.
+  function test_assigningABootWorkspaceRemembersTheMonitorsIdentityWhenKnown() {
+    twoMonitors()
+    var store = makeStore({
+      Games: anArgvSetup(["games"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+    seedBlocks(view, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-4"))
+
+    compare(store.setups.Games.bootWorkspace, 4)
+    compare(store.setups.Games.bootMonitor, "Maker two")
+    compare(chipFor(view, "Games").bootHere, true)
+  }
+
+  // A setup saved by connector, before identities, still counts as this
+  // monitor's - and a slot it held is taken over by an identity-keyed save.
+  function test_aSetupSavedByConnectorStillCompetesWithOneSavedByIdentity() {
+    twoMonitors()
+    var store = makeStore({
+      Old: Object.assign(anArgvSetup(["old"]), {
+        bootWorkspace: 4,
+        bootMonitor: "DP-2"
+      }),
+      Games: anArgvSetup(["games"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+    seedBlocks(view, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+    compare(chipFor(view, "Old").bootHere, true)
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-4"))
+
+    compare(store.setups.Games.bootMonitor, "Maker two")
+    compare(store.setups.Old.bootWorkspace, null)
+  }
+
+  function test_aSlotTakenOnAnotherMonitorIsLeftAlone() {
+    twoMonitors()
+    var store = makeStore({
+      Left: Object.assign(anArgvSetup(["left"]), {
+        bootWorkspace: 4,
+        bootMonitor: "DP-1"
+      }),
+      Games: anArgvSetup(["games"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-4"))
+
+    compare(store.setups.Games.bootMonitor, "DP-2")
+    compare(store.setups.Left.bootWorkspace, 4)
+    compare(store.setups.Left.bootMonitor, "DP-1")
+  }
+
+  function test_clearingABootWorkspaceForgetsTheMonitor() {
+    twoMonitors()
+    var store = makeStore({
+      Games: Object.assign(anArgvSetup(["games"]), {
+        bootWorkspace: 4,
+        bootMonitor: "DP-2"
+      })
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootMouseArea"))
+    mouseClick(findChild(chipFor(view, "Games"), "setupBootOption-0"))
+
+    compare(store.setups.Games.bootWorkspace, null)
+    compare(store.setups.Games.bootMonitor, null)
+  }
+
+  // The picker marks only this monitor's own slot as the setup's.
+  function test_theBootPickerMarksTheSlotOnlyOnTheSetupsMonitor() {
+    twoMonitors()
+    var store = makeStore({
+      Here: Object.assign(anArgvSetup(["here"]), {
+        bootWorkspace: 4,
+        bootMonitor: "DP-2"
+      }),
+      Legacy: Object.assign(anArgvSetup(["legacy"]), {
+        bootWorkspace: 2
+      }),
+      There: Object.assign(anArgvSetup(["there"]), {
+        bootWorkspace: 4,
+        bootMonitor: "DP-1"
+      }),
+      Off: anArgvSetup(["off"])
+    })
+    var view = createOverview({}, {
+      store: store
+    })
+
+    compare(findChild(chipFor(view, "Here"), "bootNumber").text, "4")
+    compare(findChild(chipFor(view, "There"), "bootNumber").text, "4")
+
+    function selected(name, slot) {
+      mouseClick(findChild(chipFor(view, name), "setupBootMouseArea"))
+      var option = findChild(chipFor(view, name), "setupBootOption-" + slot)
+      var result = option.selected
+      mouseClick(findChild(chipFor(view, name), "setupBootMouseArea"))
+      return result
+    }
+
+    verify(selected("Here", 4))
+    verify(!selected("Here", 3))
+    verify(selected("Legacy", 2), "a setup with no monitor reads as this one")
+    verify(!selected("There", 4))
+    verify(!selected("There", 0))
+    verify(selected("Off", 0))
+    verify(!selected("Off", 4))
   }
 
   // Only one picker at a time - opening another chip's closes whichever was
