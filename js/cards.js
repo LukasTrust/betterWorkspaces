@@ -186,19 +186,24 @@ function cardWindowRect(window, monitor, card) {
 }
 
 // The workspace the "+" card opens: the one after the highest the overview
-// shows. A strip of 1-5 grows to 6, and one that already reaches 8 grows to
-// 9 - "the next one along", not "the first gap", which would reopen a
-// workspace you had just emptied. 0 once 10 is taken, because Hyprland's
-// numbered strip stops there.
-function nextWorkspaceId(ids) {
+// shows from the monitor's own block. A strip of 1-5 grows to 6, and one that
+// already reaches 8 grows to 9 - "the next one along", not "the first gap",
+// which would reopen a workspace you had just emptied. 0 once slot 10 is
+// taken, because a monitor's numbered strip stops there.
+//
+// `block` is the monitor's block (ids block*10+1 to block*10+10, 0 for ids
+// 1-10); ids from other blocks - visiting workspaces - don't count towards
+// it. The result is a Hyprland id, not a slot.
+function nextWorkspaceId(ids, block) {
   var list = ids || []
-  var highest = 0
+  var base = (Math.max(0, Math.floor(Number(block) || 0))) * 10
+  var highest = base
   for (var i = 0; i < list.length; i++) {
     var id = Number(list[i])
-    if (id > highest) highest = id
+    if (id > highest && id <= base + 10) highest = id
   }
   var next = highest + 1
-  return next <= 10 ? next : 0
+  return next <= base + 10 ? next : 0
 }
 
 // Where the keyboard selection lands when an arrow (or its hjkl twin) is

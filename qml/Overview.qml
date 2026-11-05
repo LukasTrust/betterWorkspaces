@@ -229,9 +229,12 @@ Item {
     root.bootPopoverFor = root.bootPopoverFor === name ? "" : name
   }
 
-  function setBootWorkspace(name, workspaceId) {
+  // `slot` is 1-10 within this monitor's block (0 for "off"); the setup
+  // remembers the monitor too, so boot opens it on this one - by its
+  // identity where the state file gives one, which a port change leaves be.
+  function setBootWorkspace(name, slot) {
     if (root.store)
-      root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, name, workspaceId))
+      root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, name, slot, root.monitorName, monitorBlocks.identities))
     root.bootPopoverFor = ""
   }
 
@@ -252,6 +255,21 @@ Item {
 
   readonly property int focusedId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0
 
+  // The overview opens on the monitor that has focus (Overlay.qml puts its
+  // surface there), and shows that monitor's block of workspaces, numbered
+  // 1-10 like its bar - not every monitor's at once.
+  readonly property var monitor: Hyprland.focusedMonitor
+  readonly property string monitorName: root.monitor ? root.monitor.name : ""
+
+  MonitorBlocks {
+    id: monitorBlocks
+    objectName: "monitorBlocks"
+    monitorName: root.monitorName
+    activeWorkspaceId: root.monitor && root.monitor.activeWorkspace ? root.monitor.activeWorkspace.id : root.focusedId
+  }
+
+  readonly property int block: monitorBlocks.block
+
   // The same workspaces the bar shows, from the same settings - the overview
   // is an expansion of the bar widget, not a second opinion on what exists.
   readonly property var workspaceIds: {
@@ -263,17 +281,20 @@ Item {
         continue
       model.push({
         id: workspace.id,
-        occupied: workspace.toplevels.values.length > 0
+        occupied: workspace.toplevels.values.length > 0,
+        monitor: workspace.monitor ? workspace.monitor.name : ""
       })
     }
     return Settings.computeWorkspaceIds(model, {
       minWorkspaces: root.minWorkspaces,
       hideEmpty: root.hideEmpty,
-      focusedId: root.focusedId
+      focusedId: root.focusedId,
+      block: root.block,
+      monitorName: root.monitorName
     })
   }
 
-  readonly property int newWorkspaceId: Cards.nextWorkspaceId(root.workspaceIds)
+  readonly property int newWorkspaceId: Cards.nextWorkspaceId(root.workspaceIds, root.block)
 
   // Geometry to measure window positions against. A workspace carries its
   // own monitor; the focused one stands in for a workspace Hyprland hasn't
@@ -340,10 +361,12 @@ Item {
   }
 
   // Switching to a workspace Hyprland doesn't have yet is also how one is
-  // made, which is all the "+" card does.
+  // made, which is all the "+" card does. The same request the bar sends:
+  // one of this monitor's own workspaces by slot and monitor name, so
+  // Hyprland puts a new one on this monitor.
   function focusWorkspace(id) {
     if (id > 0 && id !== root.focusedId)
-      root.dispatch("hl.dsp.focus({ workspace = \"" + id + "\" })")
+      root.dispatch(Settings.focusWorkspaceRequest(id, root.block, root.monitorName, monitorBlocks.perMonitor))
   }
 
   function moveWindowRequest(address, id) {
@@ -1410,6 +1433,10 @@ Item {
               return list
             }
             readonly property int bootWorkspace: (chipSlot.setupEntry && chipSlot.setupEntry.bootWorkspace) || 0
+            // Whether that boot slot is on this monitor: a setup booting on
+            // another monitor keeps its badge, but none of this monitor's
+            // slots in the picker is marked as its own.
+            readonly property bool bootHere: chipSlot.bootWorkspace > 0 && (!chipSlot.setupEntry.bootMonitor || Setups.bootMonitorConnector(chipSlot.setupEntry.bootMonitor, [root.monitorName], monitorBlocks.identities) === root.monitorName)
             readonly property bool bootPopoverOpen: root.bootPopoverFor === chipSlot.modelData
 
             // The thing that actually moves under the pointer while
@@ -1652,7 +1679,7 @@ Item {
                     id: bootOption
                     objectName: "setupBootOption-" + bootOption.modelData
                     required property int modelData
-                    readonly property bool selected: chipSlot.bootWorkspace === bootOption.modelData
+                    readonly property bool selected: bootOption.modelData === 0 ? chipSlot.bootWorkspace === 0 : chipSlot.bootHere && chipSlot.bootWorkspace === bootOption.modelData
 
                     width: Style.space(26)
                     height: Style.space(26)

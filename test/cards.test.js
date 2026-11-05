@@ -208,6 +208,31 @@ test("nextWorkspaceId starts at 1 when nothing is shown", () => {
   assert.equal(nextWorkspaceId(null), 1)
 })
 
+test("nextWorkspaceId works within the monitor's block and returns a Hyprland id", () => {
+  assert.equal(nextWorkspaceId([11, 12, 13, 14, 15], 1), 16)
+  assert.equal(nextWorkspaceId([21, 22], 2), 23)
+  assert.equal(nextWorkspaceId([], 1), 11)
+  assert.equal(nextWorkspaceId([], 3), 31)
+})
+
+test("nextWorkspaceId reports nothing left once slot 10 of the block is taken", () => {
+  assert.equal(nextWorkspaceId([11, 20], 1), 0)
+  assert.equal(nextWorkspaceId([20], 1), 0)
+})
+
+test("nextWorkspaceId ignores workspaces from other blocks, visiting or not", () => {
+  assert.equal(nextWorkspaceId([3, 4, 11, 12, 28], 1), 13)
+  assert.equal(nextWorkspaceId([9, 10, 11], 0), 0)
+  assert.equal(nextWorkspaceId([3, 25], 1), 11)
+})
+
+test("nextWorkspaceId treats a missing or unusable block as block 0", () => {
+  assert.equal(nextWorkspaceId([1, 2]), 3)
+  assert.equal(nextWorkspaceId([1, 2], undefined), 3)
+  assert.equal(nextWorkspaceId([1, 2], -1), 3)
+  assert.equal(nextWorkspaceId([1, 2], "x"), 3)
+})
+
 test("navigateGrid walks the grid and stops at its edges", () => {
   // 0 1 2
   // 3 4 5

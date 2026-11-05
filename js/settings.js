@@ -19,6 +19,10 @@
 // three-line helpers `own` and `isPlainObject` appear in more than one file
 // rather than being shared.
 
+function own(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key)
+}
+
 // Every setting the widget understands, in the order the edit view shows
 // them. This is the one place their bounds, fallbacks and wording live: the
 // widget clamps with them, the edit view renders its form from them, and
@@ -205,55 +209,172 @@ function widgetSettingsFrom(barConfig, pluginId) {
   return settings
 }
 
-// The workspaces the bar shows, left to right.
+// ---- per-monitor workspaces ---------------------------------------------
+//
+// Omarchy 4.5 gives every monitor a block of ten Hyprland workspaces of its
+// own: block 0 is ids 1-10, block 1 is 11-20, and so on. Each bar (and the
+// overview) shows only its own monitor's block, numbered 1-10 again, so a
+// workspace is told apart by its Hyprland id but named by its slot.
+
+var WORKSPACE_BLOCK_SIZE = 10
+
+// Which monitor block a Hyprland workspace id belongs to.
+function blockOf(id) {
+  return Math.floor((Number(id) - 1) / WORKSPACE_BLOCK_SIZE)
+}
+
+// A workspace's number within its monitor's block, 1-10.
+function slotOf(id) {
+  return (Number(id) - 1) % WORKSPACE_BLOCK_SIZE + 1
+}
+
+// The Hyprland id of slot `slot` (1-10) in monitor block `block`.
+function workspaceIdFor(block, slot) {
+  return Number(block) * WORKSPACE_BLOCK_SIZE + Number(slot)
+}
+
+// Hyprland writes which block each monitor owns to
+// $XDG_STATE_HOME/omarchy/monitor-workspaces, one line per monitor:
+// `<block>\t<connector>\t<identity>`. The identity is the monitor's make,
+// model and serial, which - unlike the connector - survives a dock or a
+// port change. The file is rewritten by Hyprland and read while it may be
+// half there, so a line that is not three fields, or whose block is not a
+// number, is skipped rather than guessed at.
+function parseMonitorLines(text) {
+  var entries = []
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var fields = lines[i].split("\t")
+    if (fields.length < 3 || fields[1] === "") continue
+    var block = parseInt(fields[0], 10)
+    if (isNaN(block) || block < 0) continue
+    entries.push({ block: block, connector: fields[1], identity: fields[2].replace(/\r$/, "") })
+  }
+  return entries
+}
+
+// The state file read into { connector: block }.
+function parseMonitorBlocks(text) {
+  var blocks = {}
+  var entries = parseMonitorLines(text)
+  for (var i = 0; i < entries.length; i++) blocks[entries[i].connector] = entries[i].block
+  return blocks
+}
+
+// The state file read into { connector: identity }, for the lines that carry
+// one.
+function parseMonitorIdentities(text) {
+  var identities = {}
+  var entries = parseMonitorLines(text)
+  for (var i = 0; i < entries.length; i++)
+    if (entries[i].identity !== "") identities[entries[i].connector] = entries[i].identity
+  return identities
+}
+
+// Whether the state file was loaded with anything in it, i.e. whether this
+// Omarchy gives every monitor a block of its own. Before 4.5 there is no
+// such file, and the widget has to behave as it always did.
+function perMonitorActive(blocks) {
+  return !!blocks && Object.keys(blocks).length > 0
+}
+
+// The block a monitor shows. The state file is the truth; until Hyprland has
+// written it, a monitor's block is the one its active workspace is in, and
+// block 0 when even that is not known yet.
+function monitorBlock(blocks, monitorName, activeWorkspaceId) {
+  var known = blocks || {}
+  if (own(known, String(monitorName))) return known[String(monitorName)]
+  var active = Number(activeWorkspaceId)
+  return active > 0 ? blockOf(active) : 0
+}
+
+// The Lua that focuses workspace `id` from the bar or the overview of the
+// monitor that owns `block`. With per-monitor workspaces (`perMonitor`, see
+// `perMonitorActive`), one of that monitor's own workspaces is named by its
+// slot and monitor, which is what Omarchy's `o.workspaces.focus` takes; a
+// visiting workspace from another block has no slot on this monitor, so it
+// is focused by its Hyprland id. Without them - Omarchy before 4.5 has no
+// `o.workspaces` at all - every workspace is focused by its id.
+function focusWorkspaceRequest(id, block, monitorName, perMonitor) {
+  if (perMonitor === true && blockOf(id) === Number(block))
+    return "o.workspaces.focus(" + slotOf(id) + ", \"" + String(monitorName || "") + "\")"
+  return "hl.dsp.focus({ workspace = \"" + id + "\" })"
+}
+
+// The workspaces a monitor's bar shows, left to right, as Hyprland ids.
 //
 // `workspaces` is what Hyprland currently knows about, as
-// [{ id, occupied }]; `options` carries the settings that decide what is
-// shown, plus the focused workspace id. Ids outside 1-10 are dropped: those
-// are Hyprland's special workspaces (scratchpads, negative ids), which
-// aren't part of the numbered strip.
+// [{ id, occupied, monitor }] (`monitor` being the connector name of the
+// monitor it sits on); `options` carries the settings that decide what is
+// shown, the monitor's `block` and `monitorName`, and `focusedId`, the
+// workspace that monitor is showing.
+//
+// The monitor's own block comes first, then any "guests": workspaces from
+// another block that sit on this monitor, which is what a monitor's
+// workspaces turn into once the monitor they belong to is unplugged. Ids
+// below 1 are dropped: those are Hyprland's special workspaces
+// (scratchpads, negative ids), which aren't part of the numbered strip.
 function computeWorkspaceIds(workspaces, options) {
   var list = workspaces || []
   var settings = options || {}
   var hideEmpty = clampSetting("hideEmpty", settings.hideEmpty)
+  var block = Math.max(0, Math.floor(Number(settings.block) || 0))
+  var monitorName = String(settings.monitorName || "")
+  var base = block * WORKSPACE_BLOCK_SIZE
   var ids = []
+  var guests = []
 
   function add(id) {
     var number = Number(id)
-    if (number > 0 && number <= 10 && ids.indexOf(number) === -1) ids.push(number)
+    if (!(number > base && number <= base + WORKSPACE_BLOCK_SIZE)) return
+    if (ids.indexOf(number) === -1) ids.push(number)
+  }
+
+  function addGuest(id) {
+    var number = Number(id)
+    if (!(number > 0) || blockOf(number) === block) return
+    if (guests.indexOf(number) === -1) guests.push(number)
   }
 
   // With empty workspaces hidden, the always-shown ones don't apply: the
   // strip is then only what is in use.
   if (!hideEmpty) {
     var minWorkspaces = clampSetting("minWorkspaces", settings.minWorkspaces)
-    for (var id = 1; id <= minWorkspaces; id++) add(id)
+    for (var slot = 1; slot <= minWorkspaces; slot++) add(base + slot)
   }
 
   for (var i = 0; i < list.length; i++) {
     var workspace = list[i] || {}
-    if (!hideEmpty || workspace.occupied) add(workspace.id)
+    if (hideEmpty && !workspace.occupied) continue
+    add(workspace.id)
+    if (monitorName.length > 0 && workspace.monitor === monitorName) addGuest(workspace.id)
   }
 
-  // The workspace you are on is always shown, so switching to an empty one
-  // doesn't make it vanish from under the cursor.
+  // The workspace the monitor is on is always shown, so switching to an
+  // empty one doesn't make it vanish from under the cursor.
   add(settings.focusedId)
+  addGuest(settings.focusedId)
 
-  ids.sort(function(left, right) { return left - right })
-  return ids
+  function ascending(left, right) { return left - right }
+  ids.sort(ascending)
+  guests.sort(ascending)
+  return ids.concat(guests)
 }
 
 // What a workspace is called in the bar and on its overview card. `labels`
 // is the `workspaceLabels` setting: any comma-separated list, where the Nth
-// entry names workspace N. An entry left blank, or a workspace past the end
-// of the list, keeps its number - with 10 shown as "0", matching the key
+// entry names the Nth workspace of a monitor - by slot, so every monitor
+// reads the same list. An entry left blank, or a workspace past the end of
+// the list, keeps its slot number - with 10 shown as "0", matching the key
 // that switches to it.
 function workspaceLabel(id, labels) {
   var number = Number(id)
+  if (!(number >= 1)) return String(id)
+  var slot = slotOf(number)
   var entries = clampSetting("workspaceLabels", labels).split(",")
-  var entry = number >= 1 && number <= entries.length ? entries[number - 1].trim() : ""
+  var entry = slot <= entries.length ? entries[slot - 1].trim() : ""
   if (entry.length > 0) return entry
-  return number === 10 ? "0" : String(id)
+  return slot === WORKSPACE_BLOCK_SIZE ? "0" : String(slot)
 }
 
 // Whether two id lists hold the same ids in the same order. The widget
@@ -276,6 +397,15 @@ if (typeof module !== "undefined") {
     applySetting: applySetting,
     settingValue: settingValue,
     widgetSettingsFrom: widgetSettingsFrom,
+    WORKSPACE_BLOCK_SIZE: WORKSPACE_BLOCK_SIZE,
+    blockOf: blockOf,
+    slotOf: slotOf,
+    workspaceIdFor: workspaceIdFor,
+    parseMonitorBlocks: parseMonitorBlocks,
+    parseMonitorIdentities: parseMonitorIdentities,
+    perMonitorActive: perMonitorActive,
+    monitorBlock: monitorBlock,
+    focusWorkspaceRequest: focusWorkspaceRequest,
     computeWorkspaceIds: computeWorkspaceIds,
     workspaceLabel: workspaceLabel,
     sameIds: sameIds

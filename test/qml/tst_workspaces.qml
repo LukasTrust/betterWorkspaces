@@ -46,11 +46,17 @@ TestCase {
   }
 
   Component {
+    id: monitorComponent
+    HyprlandMonitor {}
+  }
+
+  Component {
     id: waylandComponent
     Toplevel {}
   }
 
   function init() {
+    QsWindow.testReset()
     Hyprland.testReset()
     DesktopEntries.testReset()
     Quickshell.testReset()
@@ -89,6 +95,46 @@ TestCase {
     for (var i = 0; i < list.length; i++)
       list[i].workspace = workspace
     return workspace
+  }
+
+  // A monitor on Hyprland's side. `active` is the workspace it is showing;
+  // the focused one also becomes Hyprland's focused workspace, the way it is
+  // for real.
+  function makeMonitor(name, active, focused) {
+    var monitor = createTemporaryObject(monitorComponent, testCase, {
+      name: name,
+      activeWorkspace: active || null,
+      focused: !!focused
+    })
+    if (focused) {
+      Hyprland.focusedMonitor = monitor
+      Hyprland.focusedWorkspace = active || null
+    }
+    return monitor
+  }
+
+  // Puts a workspace on a monitor, the way Hyprland reports it.
+  function onMonitor(workspace, monitor) {
+    workspace.monitor = monitor
+    return workspace
+  }
+
+  // Which bar the widget under test is: the screen of the window it sits in.
+  function barOnScreen(name) {
+    QsWindow.window = {
+      screen: {
+        name: name
+      }
+    }
+  }
+
+  // What Hyprland writes to $XDG_STATE_HOME/omarchy/monitor-workspaces.
+  function blocksFile(widget) {
+    return findChild(widget, "monitorBlocksFile")
+  }
+
+  function stateLine(block, connector) {
+    return block + "\t" + connector + "\tMaker " + connector + " serial\n"
   }
 
   function withThemeIcons(extra) {
@@ -320,9 +366,11 @@ TestCase {
   }
 
   function test_clickingAWorkspaceFocusesIt() {
+    makeMonitor("DP-1", null, true)
     var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
     mouseClick(cellFor(widget, 3))
-    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-1\")'"])
   }
 
   // Clicking the workspace you are already on has nothing to switch to, so
@@ -330,7 +378,7 @@ TestCase {
   function test_clickingTheWorkspaceYouAreOnOpensTheOverview() {
     var focusedWorkspace = makeWorkspace(3)
     Hyprland.workspaces.values = [focusedWorkspace]
-    Hyprland.focusedWorkspace = focusedWorkspace
+    makeMonitor("DP-1", focusedWorkspace, true)
     var widget = createWidget()
 
     mouseClick(cellFor(widget, 3))
@@ -346,13 +394,23 @@ TestCase {
   function test_overviewEnabledOffLeavesTheClickAsAPlainSwitch() {
     var focusedWorkspace = makeWorkspace(3)
     Hyprland.workspaces.values = [focusedWorkspace]
-    Hyprland.focusedWorkspace = focusedWorkspace
+    makeMonitor("DP-1", focusedWorkspace, true)
     var widget = createWidget({
       overviewEnabled: false
     })
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
 
     mouseClick(cellFor(widget, 3))
     compare(fakeShell.testToggled, [])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-1\")'"])
+  }
+
+  // Omarchy before 4.5 has no state file and no `o.workspaces`, so focusing
+  // has to stay a plain workspace focus by id.
+  function test_withoutTheStateFileClickingFocusesByIdNotByOWorkspaces() {
+    makeMonitor("DP-1", null, true)
+    var widget = createWidget()
+    mouseClick(cellFor(widget, 3))
     compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
   }
 
@@ -360,12 +418,13 @@ TestCase {
   function test_clickingAnotherWorkspaceNeverOpensTheOverview() {
     var focusedWorkspace = makeWorkspace(3)
     Hyprland.workspaces.values = [focusedWorkspace]
-    Hyprland.focusedWorkspace = focusedWorkspace
+    makeMonitor("DP-1", focusedWorkspace, true)
     var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
 
     mouseClick(cellFor(widget, 1))
     compare(fakeShell.testToggled, [])
-    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"1\" })'"])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(1, \"DP-1\")'"])
   }
 
   function test_clickingTheWorkspaceYouAreOnWithoutAShellDoesNothingRash() {
@@ -382,9 +441,356 @@ TestCase {
 
   function test_clickingTheLabelStillFocusesTheWorkspace() {
     Hyprland.workspaces.values = [makeWorkspace(3, [makeWindow("foot")])]
+    makeMonitor("DP-1", null, true)
     var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
     mouseClick(findChild(cellFor(widget, 3), "workspaceLabel"))
-    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"3\" })'"])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-1\")'"])
+  }
+
+  // ---- one block of workspaces per monitor ----------------------------------
+  //
+  // Omarchy 4.5: monitor block 0 is workspaces 1-10, block 1 is 11-20, and so
+  // on. Each bar shows its own monitor's block, numbered 1-10 again.
+
+  // Clicks the number itself: the cell's middle can be a window icon, which
+  // has an action of its own. The cells are laid out on the next polish, and
+  // the strip was rebuilt just before.
+  function clickLabel(widget, id) {
+    wait(20)
+    mouseClick(findChild(cellFor(widget, id), "workspaceLabel"))
+  }
+
+  function test_showsTheBlockTheStateFileGivesItsMonitor() {
+    var first = makeMonitor("DP-1", null, true)
+    var second = makeMonitor("DP-2", null, false)
+    Hyprland.monitors.values = [first, second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(2, "DP-2"))
+
+    tryCompare(widget, "block", 2)
+    compare(shownIds(widget), [21, 22, 23, 24, 25])
+  }
+
+  function test_numbersTheMonitorsWorkspacesFromOne() {
+    var second = makeMonitor("DP-2", null, true)
+    Hyprland.monitors.values = [second]
+    var widget = createWidget({
+      minWorkspaces: 10
+    })
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+
+    tryCompare(widget, "block", 1)
+    compare(shownIds(widget), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+    compare(findChild(cellFor(widget, 11), "workspaceLabel").text, "1")
+    compare(findChild(cellFor(widget, 15), "workspaceLabel").text, "5")
+    compare(findChild(cellFor(widget, 20), "workspaceLabel").text, "0")
+  }
+
+  function test_theWorkspaceLabelsListNamesEveryMonitorsWorkspacesBySlot() {
+    var second = makeMonitor("DP-2", null, true)
+    Hyprland.monitors.values = [second]
+    var widget = createWidget({
+      workspaceLabels: "a, b, c"
+    })
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+
+    tryCompare(widget, "block", 1)
+    compare(findChild(cellFor(widget, 11), "workspaceLabel").text, "a")
+    compare(findChild(cellFor(widget, 13), "workspaceLabel").text, "c")
+    compare(findChild(cellFor(widget, 14), "workspaceLabel").text, "4")
+  }
+
+  function test_followsTheStateFileWhenItChanges() {
+    var first = makeMonitor("DP-1", null, true)
+    Hyprland.monitors.values = [first]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
+    tryCompare(widget, "block", 0)
+    compare(shownIds(widget), [1, 2, 3, 4, 5])
+
+    blocksFile(widget).testSetContent(stateLine(3, "DP-1"))
+    tryCompare(widget, "block", 3)
+    compare(shownIds(widget), [31, 32, 33, 34, 35])
+
+    // A file that goes missing leaves the monitor's own active workspace to say.
+    blocksFile(widget).testSetMissing()
+    tryCompare(widget, "block", 0)
+    compare(shownIds(widget), [1, 2, 3, 4, 5])
+  }
+
+  // Before Hyprland has written the file, the monitor's block is the one its
+  // active workspace is in.
+  function test_beforeTheStateFileExistsItUsesTheBlockOfTheActiveWorkspace() {
+    var active = makeWorkspace(23)
+    Hyprland.workspaces.values = [active]
+    var first = makeMonitor("DP-1", active, true)
+    Hyprland.monitors.values = [first]
+    var widget = createWidget()
+
+    compare(widget.block, 2)
+    compare(shownIds(widget), [21, 22, 23, 24, 25])
+  }
+
+  function test_aMonitorTheFileDoesNotListFallsBackToItsActiveWorkspace() {
+    var active = makeWorkspace(12)
+    Hyprland.workspaces.values = [active]
+    var second = makeMonitor("DP-2", active, true)
+    Hyprland.monitors.values = [second]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
+
+    wait(10)
+    compare(widget.block, 1)
+    compare(shownIds(widget), [11, 12, 13, 14, 15])
+  }
+
+  function test_withNoMonitorAtAllItShowsBlockZero() {
+    var widget = createWidget()
+    compare(widget.monitorName, "")
+    compare(widget.block, 0)
+    compare(shownIds(widget), [1, 2, 3, 4, 5])
+  }
+
+  function test_readsTheStateFileFromTheStateHome() {
+    Quickshell.testEnv = {
+      XDG_STATE_HOME: "/state"
+    }
+    var widget = createWidget()
+    compare(blocksFile(widget).path, "/state/omarchy/monitor-workspaces")
+    Quickshell.testEnv = {
+      HOME: "/home/me"
+    }
+    var other = createWidget()
+    compare(blocksFile(other).path, "/home/me/.local/state/omarchy/monitor-workspaces")
+  }
+
+  // The bar sits in a window on one screen, so it is that screen's monitor it
+  // shows, not whichever one has focus.
+  function test_showsTheMonitorOfItsOwnWindowNotTheFocusedOne() {
+    var first = makeMonitor("DP-1", null, true)
+    var second = makeMonitor("DP-2", null, false)
+    Hyprland.monitors.values = [first, second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(1, "DP-2"))
+
+    tryCompare(widget, "monitorName", "DP-2")
+    tryCompare(widget, "block", 1)
+    compare(shownIds(widget), [11, 12, 13, 14, 15])
+  }
+
+  function test_aBarWithNoWindowYetShowsTheFocusedMonitor() {
+    var first = makeMonitor("DP-1", null, false)
+    var second = makeMonitor("DP-2", null, true)
+    Hyprland.monitors.values = [first, second]
+    var widget = createWidget()
+
+    compare(widget.monitorName, "DP-2")
+  }
+
+  function test_aBarWhoseWindowHasNoScreenYetShowsTheFocusedMonitor() {
+    makeMonitor("DP-1", null, true)
+    QsWindow.window = {
+      screen: null
+    }
+    var widget = createWidget()
+
+    compare(widget.monitorName, "DP-1")
+  }
+
+  function test_eachBarHighlightsTheWorkspaceItsOwnMonitorShows() {
+    var firstActive = makeWorkspace(3)
+    var secondActive = makeWorkspace(12)
+    Hyprland.workspaces.values = [firstActive, secondActive]
+    var first = makeMonitor("DP-1", firstActive, true)
+    var second = makeMonitor("DP-2", secondActive, false)
+    Hyprland.monitors.values = [first, second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(1, "DP-2"))
+
+    tryCompare(widget, "block", 1)
+    verify(cellFor(widget, 12).focused)
+    verify(!cellFor(widget, 11).focused)
+    verify(findChild(cellFor(widget, 12), "workspaceLabel").font.bold)
+    tryCompare(cellFor(widget, 12), "opacity", 1)
+  }
+
+  function test_theHighlightFollowsTheMonitorsActiveWorkspace() {
+    var one = makeWorkspace(11)
+    var two = makeWorkspace(12)
+    Hyprland.workspaces.values = [one, two]
+    var second = makeMonitor("DP-2", one, true)
+    Hyprland.monitors.values = [second]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+    tryCompare(widget, "block", 1)
+    verify(cellFor(widget, 11).focused)
+
+    second.activeWorkspace = two
+    tryCompare(cellFor(widget, 12), "focused", true)
+    verify(!cellFor(widget, 11).focused)
+  }
+
+  function test_aMonitorsActiveWorkspaceIsShownEvenWhenEmptyAndHidden() {
+    var active = makeWorkspace(18)
+    Hyprland.workspaces.values = [active, makeWorkspace(14, [makeWindow("foot")])]
+    var second = makeMonitor("DP-2", active, true)
+    Hyprland.monitors.values = [second]
+    var widget = createWidget({
+      hideEmpty: true
+    })
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+
+    tryCompare(widget, "block", 1)
+    compare(shownIds(widget), [14, 18])
+  }
+
+  function test_listsOnlyTheMonitorsOwnWorkspacesWithWindows() {
+    var first = makeMonitor("DP-1", null, true)
+    var second = makeMonitor("DP-2", null, false)
+    Hyprland.monitors.values = [first, second]
+    Hyprland.workspaces.values = [onMonitor(makeWorkspace(2, [makeWindow("foot")]), first), onMonitor(makeWorkspace(18, [makeWindow("foot")]), second), onMonitor(makeWorkspace(27, [makeWindow("foot")]), second)]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(1, "DP-2"))
+
+    tryCompare(widget, "block", 1)
+    // 2 belongs to the other monitor; 27 is a visitor on this one.
+    compare(shownIds(widget), [11, 12, 13, 14, 15, 18, 27])
+  }
+
+  // What is left of an unplugged monitor's workspaces lands on a monitor
+  // that is still there, after that monitor's own.
+  function test_visitingWorkspacesComeAfterTheMonitorsOwn() {
+    var first = makeMonitor("DP-1", null, true)
+    Hyprland.monitors.values = [first]
+    Hyprland.workspaces.values = [onMonitor(makeWorkspace(21, [makeWindow("foot")]), first), onMonitor(makeWorkspace(13, [makeWindow("foot")]), first), onMonitor(makeWorkspace(2, [makeWindow("foot")]), first)]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
+
+    tryCompare(widget, "block", 0)
+    compare(shownIds(widget), [1, 2, 3, 4, 5, 13, 21])
+    // Labelled by slot, like everything else.
+    compare(findChild(cellFor(widget, 13), "workspaceLabel").text, "3")
+    compare(findChild(cellFor(widget, 21), "workspaceLabel").text, "1")
+  }
+
+  function test_aVisitorThatHasGoneIsDroppedFromTheStrip() {
+    var first = makeMonitor("DP-1", null, true)
+    Hyprland.monitors.values = [first]
+    var visitor = onMonitor(makeWorkspace(21, [makeWindow("foot")]), first)
+    Hyprland.workspaces.values = [visitor]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
+    tryCompare(widget, "block", 0)
+    compare(shownIds(widget), [1, 2, 3, 4, 5, 21])
+
+    Hyprland.workspaces.values = []
+    tryCompare(widget, "workspaceIds", [1, 2, 3, 4, 5])
+  }
+
+  function test_clickingAnOwnWorkspaceFocusesItBySlotOnThisMonitor() {
+    var second = makeMonitor("DP-2", null, false)
+    Hyprland.monitors.values = [second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+    tryCompare(widget, "block", 1)
+
+    clickLabel(widget, 13)
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-2\")'"])
+  }
+
+  function test_clickingAVisitingWorkspaceFocusesItByItsHyprlandId() {
+    var first = makeMonitor("DP-1", null, true)
+    Hyprland.monitors.values = [first]
+    Hyprland.workspaces.values = [onMonitor(makeWorkspace(21, [makeWindow("foot")]), first)]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
+    tryCompare(widget, "block", 0)
+
+    clickLabel(widget, 21)
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'hl.dsp.focus({ workspace = \"21\" })'"])
+  }
+
+  function test_clickingTheShownWorkspaceOfTheFocusedMonitorOpensTheOverview() {
+    var active = makeWorkspace(12)
+    Hyprland.workspaces.values = [active]
+    var second = makeMonitor("DP-2", active, true)
+    Hyprland.monitors.values = [second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+    tryCompare(widget, "block", 1)
+
+    clickLabel(widget, 12)
+    compare(fakeShell.testToggled, [
+      {
+        id: "better-workspaces",
+        payload: "{}"
+      }
+    ])
+    compare(fakeBar.testCommands, [])
+  }
+
+  // The overview opens on the focused monitor, so a click on the shown
+  // workspace of another monitor brings focus there instead; the next click
+  // opens it.
+  function test_clickingTheShownWorkspaceOfAnotherMonitorFocusesItFirst() {
+    var firstActive = makeWorkspace(3)
+    var secondActive = makeWorkspace(12)
+    Hyprland.workspaces.values = [firstActive, secondActive]
+    var first = makeMonitor("DP-1", firstActive, true)
+    var second = makeMonitor("DP-2", secondActive, false)
+    Hyprland.monitors.values = [first, second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(1, "DP-2"))
+    tryCompare(widget, "block", 1)
+
+    clickLabel(widget, 12)
+    compare(fakeShell.testToggled, [])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(2, \"DP-2\")'"])
+  }
+
+  function test_theWorkspaceOnAnotherMonitorIsNotAlreadyThere() {
+    var firstActive = makeWorkspace(3)
+    var secondActive = makeWorkspace(12)
+    Hyprland.workspaces.values = [firstActive, secondActive]
+    var first = makeMonitor("DP-1", firstActive, true)
+    var second = makeMonitor("DP-2", secondActive, false)
+    Hyprland.monitors.values = [first, second]
+    barOnScreen("DP-2")
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(1, "DP-2"))
+    tryCompare(widget, "block", 1)
+
+    // Workspace 13 is not what this monitor shows, so it is a plain switch,
+    // overview or not.
+    clickLabel(widget, 13)
+    compare(fakeShell.testToggled, [])
+    compare(fakeBar.testCommands, ["hyprctl dispatch 'o.workspaces.focus(3, \"DP-2\")'"])
+  }
+
+  function test_stateReportsTheMonitorBlockAndSlots() {
+    var active = makeWorkspace(12)
+    Hyprland.workspaces.values = [active]
+    var second = makeMonitor("DP-2", active, true)
+    Hyprland.monitors.values = [second]
+    var widget = createWidget()
+    blocksFile(widget).testSetContent(stateLine(1, "DP-2"))
+    tryCompare(widget, "block", 1)
+
+    var state = stateOf(widget)
+    compare(state.monitor, "DP-2")
+    compare(state.block, 1)
+    compare(state.workspaces.map(workspace => workspace.id), [11, 12, 13, 14, 15])
+    compare(state.workspaces.map(workspace => workspace.slot), [1, 2, 3, 4, 5])
+    compare(state.workspaces.map(workspace => workspace.label), ["1", "2", "3", "4", "5"])
+    compare(state.workspaces.map(workspace => workspace.focused), [false, true, false, false, false])
   }
 
   // ---- hovering and clicking an icon --------------------------------------

@@ -16,6 +16,8 @@ const {
   assignBootWorkspace,
   shouldRunBoot,
   bootEntries,
+  bootMonitorConnector,
+  bootMonitorValue,
   relativeRect,
   captureSetupWindows,
   parseProcCmdline
@@ -149,6 +151,14 @@ test("validateSetupEntry accepts a boot workspace 1-10 or none, rejects anything
   assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: "3" })), false)
 })
 
+test("validateSetupEntry accepts a boot monitor name or none, rejects anything else", () => {
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: "DP-5" })), true)
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: null })), true)
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 3 })), true, "a file from before per-monitor workspaces")
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: 5 })), false)
+  assert.equal(validateSetupEntry(aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: ["DP-5"] })), false)
+})
+
 test("validateSetupFile reads back exactly the valid setups", () => {
   const file = aSetupFile({ Work: aSetup([aWindow()]), Games: aSetup([aWindow({ class: "steam" })]) })
   assert.deepEqual(Object.keys(validateSetupFile(file)).sort(), ["Games", "Work"])
@@ -202,32 +212,74 @@ test("assignBootWorkspace sets a setup's boot workspace", () => {
   const setups = { Work: { windows: [], bootWorkspace: null }, Games: { windows: [] } }
   const next = assignBootWorkspace(setups, "Work", 3)
   assert.equal(next.Work.bootWorkspace, 3)
+  assert.equal(next.Work.bootMonitor, null, "no monitor given: the one with focus at boot")
   assert.equal(next.Games.bootWorkspace, undefined)
 })
 
-test("assignBootWorkspace clears whoever else already had that workspace", () => {
+test("assignBootWorkspace remembers which monitor the slot is on", () => {
+  const setups = { Work: { windows: [], bootWorkspace: null } }
+  const next = assignBootWorkspace(setups, "Work", 3, "DP-5")
+  assert.equal(next.Work.bootWorkspace, 3)
+  assert.equal(next.Work.bootMonitor, "DP-5")
+})
+
+test("assignBootWorkspace clears whoever else already had that workspace on that monitor", () => {
   const setups = { Work: { windows: [], bootWorkspace: 3 }, Games: { windows: [], bootWorkspace: null } }
   const next = assignBootWorkspace(setups, "Games", 3)
   assert.equal(next.Games.bootWorkspace, 3)
   assert.equal(next.Work.bootWorkspace, null)
+
+  const named = { Work: { windows: [], bootWorkspace: 3, bootMonitor: "DP-5" }, Games: { windows: [] } }
+  const taken = assignBootWorkspace(named, "Games", 3, "DP-5")
+  assert.equal(taken.Games.bootMonitor, "DP-5")
+  assert.equal(taken.Work.bootWorkspace, null)
+  assert.equal(taken.Work.bootMonitor, null)
+})
+
+test("assignBootWorkspace leaves the same slot on another named monitor alone", () => {
+  const setups = {
+    Work: { windows: [], bootWorkspace: 3, bootMonitor: "DP-5" },
+    Chat: { windows: [], bootWorkspace: 3, bootMonitor: "DP-6" },
+    Games: { windows: [] }
+  }
+  const next = assignBootWorkspace(setups, "Games", 3, "DP-4")
+  assert.equal(next.Games.bootMonitor, "DP-4")
+  assert.equal(next.Work.bootWorkspace, 3)
+  assert.equal(next.Work.bootMonitor, "DP-5")
+  assert.equal(next.Chat.bootWorkspace, 3)
+})
+
+// "No monitor" is the one with focus at boot, which could be any of them.
+test("assignBootWorkspace treats a setup with no monitor as competing for the slot on every monitor", () => {
+  const legacy = { Old: { windows: [], bootWorkspace: 3 }, Games: { windows: [] } }
+  const named = assignBootWorkspace(legacy, "Games", 3, "DP-4")
+  assert.equal(named.Games.bootWorkspace, 3)
+  assert.equal(named.Old.bootWorkspace, null)
+
+  const other = { Work: { windows: [], bootWorkspace: 3, bootMonitor: "DP-5" }, Games: { windows: [] } }
+  const unnamed = assignBootWorkspace(other, "Games", 3)
+  assert.equal(unnamed.Games.bootWorkspace, 3)
+  assert.equal(unnamed.Work.bootWorkspace, null)
 })
 
 test("assignBootWorkspace clears with 0 or an out-of-range workspace", () => {
-  const setups = { Work: { windows: [], bootWorkspace: 3 } }
-  assert.equal(assignBootWorkspace(setups, "Work", 0).Work.bootWorkspace, null)
-  assert.equal(assignBootWorkspace(setups, "Work", 11).Work.bootWorkspace, null)
-  assert.equal(assignBootWorkspace(setups, "Work", null).Work.bootWorkspace, null)
+  const setups = { Work: { windows: [], bootWorkspace: 3, bootMonitor: "DP-5" } }
+  assert.equal(assignBootWorkspace(setups, "Work", 0, "DP-5").Work.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(setups, "Work", 11, "DP-5").Work.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(setups, "Work", null, "DP-5").Work.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(setups, "Work", 0, "DP-5").Work.bootMonitor, null, "no monitor kept for a setup that does not boot")
 })
 
 test("assignBootWorkspace leaves every other field of the changed entries alone", () => {
   const setups = { Work: { windows: [{ recipe: { type: "argv", argv: ["x"] } }], bootWorkspace: null } }
-  const next = assignBootWorkspace(setups, "Work", 5)
+  const next = assignBootWorkspace(setups, "Work", 5, "DP-5")
   assert.deepEqual(next.Work.windows, setups.Work.windows)
 })
 
 test("assignBootWorkspace copes with an unknown setup name and an empty store", () => {
   assert.deepEqual(assignBootWorkspace({}, "Ghost", 3), {})
   assert.deepEqual(assignBootWorkspace(null, "Ghost", 3), {})
+  assert.deepEqual(assignBootWorkspace({ Work: null }, "Ghost", 3), { Work: {} })
 })
 
 test("shouldRunBoot runs once per signature, never with no signature at all", () => {
@@ -247,8 +299,36 @@ test("bootEntries picks the setups with a valid boot workspace, lowest first", (
     Chat: { windows: [] }
   }
   assert.deepEqual(bootEntries(setups), [
-    { name: "Work", workspaceId: 1 },
-    { name: "Games", workspaceId: 5 }
+    { name: "Work", slot: 1, monitor: "" },
+    { name: "Games", slot: 5, monitor: "" }
+  ])
+})
+
+test("bootEntries carries each setup's monitor, unnamed first and then by name", () => {
+  const setups = {
+    A: { windows: [], bootWorkspace: 2, bootMonitor: "DP-5" },
+    B: { windows: [], bootWorkspace: 4, bootMonitor: "DP-4" },
+    C: { windows: [], bootWorkspace: 1, bootMonitor: "DP-5" },
+    D: { windows: [], bootWorkspace: 9 },
+    E: { windows: [], bootWorkspace: 3, bootMonitor: null }
+  }
+  assert.deepEqual(bootEntries(setups), [
+    { name: "E", slot: 3, monitor: "" },
+    { name: "D", slot: 9, monitor: "" },
+    { name: "B", slot: 4, monitor: "DP-4" },
+    { name: "C", slot: 1, monitor: "DP-5" },
+    { name: "A", slot: 2, monitor: "DP-5" }
+  ])
+})
+
+test("bootEntries lets two monitors each boot a setup onto the same slot", () => {
+  const setups = {
+    Left: { windows: [], bootWorkspace: 1, bootMonitor: "DP-4" },
+    Right: { windows: [], bootWorkspace: 1, bootMonitor: "DP-5" }
+  }
+  assert.deepEqual(bootEntries(setups), [
+    { name: "Left", slot: 1, monitor: "DP-4" },
+    { name: "Right", slot: 1, monitor: "DP-5" }
   ])
 })
 
@@ -261,12 +341,17 @@ test("bootEntries ignores an out-of-range or non-numeric boot workspace", () => 
   assert.deepEqual(bootEntries(setups), [])
 })
 
+test("bootEntries treats a monitor that is not a name as none", () => {
+  const setups = { A: { windows: [], bootWorkspace: 2, bootMonitor: 7 } }
+  assert.deepEqual(bootEntries(setups), [{ name: "A", slot: 2, monitor: "" }])
+})
+
 test("bootEntries resolves a hand-edited duplicate workspace alphabetically", () => {
   const setups = {
     Zeta: { windows: [], bootWorkspace: 2 },
     Alpha: { windows: [], bootWorkspace: 2 }
   }
-  assert.deepEqual(bootEntries(setups), [{ name: "Alpha", workspaceId: 2 }])
+  assert.deepEqual(bootEntries(setups), [{ name: "Alpha", slot: 2, monitor: "" }])
 })
 
 test("bootEntries copes with nothing to open", () => {
@@ -367,4 +452,93 @@ test("parseProcCmdline copes with a read that found nothing", () => {
   assert.deepEqual(parseProcCmdline(""), [])
   assert.deepEqual(parseProcCmdline(null), [])
   assert.deepEqual(parseProcCmdline(undefined), [])
+})
+
+test("bootMonitorConnector takes a connector that is plugged in", () => {
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"], {}), "DP-5")
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"]), "DP-5")
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"], { "DP-4": "Maker one", "DP-5": "Maker two" }), "DP-5")
+})
+
+test("bootMonitorConnector finds a monitor by its identity when the connector has changed", () => {
+  const identities = { "DP-4": "Maker one", "DP-9": "Maker two" }
+  assert.equal(bootMonitorConnector("Maker two", ["DP-4", "DP-9"], identities), "DP-9")
+  assert.equal(bootMonitorConnector("Maker one", ["DP-4", "DP-9"], identities), "DP-4")
+})
+
+test("bootMonitorConnector falls back to the connector when the identity matches nothing or is ambiguous", () => {
+  assert.equal(bootMonitorConnector("DP-5", ["DP-5"], { "DP-5": "Maker two" }), "DP-5")
+  assert.equal(bootMonitorConnector("Maker three", ["DP-4"], { "DP-4": "Maker one" }), "")
+  // Two identical monitors share an identity: it names neither of them.
+  assert.equal(bootMonitorConnector("Twin", ["DP-4", "DP-5"], { "DP-4": "Twin", "DP-5": "Twin" }), "")
+  assert.equal(bootMonitorConnector("DP-5", ["DP-4", "DP-5"], { "DP-4": "Twin", "DP-5": "Twin" }), "DP-5")
+})
+
+test("bootMonitorConnector is empty for no monitor wanted or none plugged in", () => {
+  assert.equal(bootMonitorConnector("", ["DP-4"], { "DP-4": "Maker" }), "")
+  assert.equal(bootMonitorConnector(null, ["DP-4"], {}), "")
+  assert.equal(bootMonitorConnector(undefined, ["DP-4"], {}), "")
+  assert.equal(bootMonitorConnector("DP-4", [], {}), "")
+  assert.equal(bootMonitorConnector("DP-4", null, null), "")
+  // An identity key that is only an object property, not a monitor.
+  assert.equal(bootMonitorConnector("constructor", ["constructor"], {}), "constructor")
+})
+
+test("bootMonitorValue is the identity when the state file knows one", () => {
+  assert.equal(bootMonitorValue("DP-5", { "DP-4": "Maker one", "DP-5": "Maker two" }), "Maker two")
+})
+
+test("bootMonitorValue stays the connector with no identity known", () => {
+  assert.equal(bootMonitorValue("DP-5", {}), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", null), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", undefined), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", { "DP-5": "" }), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", { "DP-5": 3 }), "DP-5")
+  assert.equal(bootMonitorValue("DP-5", { "DP-4": "Maker one" }), "DP-5")
+  assert.equal(bootMonitorValue("constructor", {}), "constructor")
+  assert.equal(bootMonitorValue("", { "DP-4": "Maker one" }), "")
+  assert.equal(bootMonitorValue(null, {}), "")
+})
+
+test("bootMonitorValue leaves an identity as it is", () => {
+  assert.equal(bootMonitorValue("Maker two", { "DP-5": "Maker two" }), "Maker two")
+})
+
+test("assignBootWorkspace stores the monitor's identity when one is known", () => {
+  const next = assignBootWorkspace({ Work: aSetup([aWindow()]) }, "Work", 3, "DP-5", { "DP-5": "Maker two" })
+  assert.equal(next.Work.bootWorkspace, 3)
+  assert.equal(next.Work.bootMonitor, "Maker two")
+})
+
+test("assignBootWorkspace stores the connector when no identity is known", () => {
+  const setups = { Work: aSetup([aWindow()]) }
+  assert.equal(assignBootWorkspace(setups, "Work", 3, "DP-5").Work.bootMonitor, "DP-5")
+  assert.equal(assignBootWorkspace(setups, "Work", 3, "DP-5", {}).Work.bootMonitor, "DP-5")
+  assert.equal(assignBootWorkspace(setups, "Work", 3, "DP-5", { "DP-4": "Maker one" }).Work.bootMonitor, "DP-5")
+})
+
+test("assignBootWorkspace treats a connector and its identity as the same monitor", () => {
+  const identities = { "DP-5": "Maker two" }
+  const old = { Old: aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: "DP-5" }), Work: aSetup([aWindow()]) }
+  const next = assignBootWorkspace(old, "Work", 3, "DP-5", identities)
+  assert.equal(next.Old.bootWorkspace, null)
+  assert.equal(next.Work.bootMonitor, "Maker two")
+
+  const byIdentity = { Old: aSetup([aWindow()], { bootWorkspace: 3, bootMonitor: "Maker two" }), Work: aSetup([aWindow()]) }
+  assert.equal(assignBootWorkspace(byIdentity, "Work", 3, "DP-5", identities).Old.bootWorkspace, null)
+  assert.equal(assignBootWorkspace(byIdentity, "Work", 3, "DP-4", identities).Old.bootWorkspace, 3)
+})
+
+test("a setup saved by identity still boots on its monitor after a port change", () => {
+  const saved = assignBootWorkspace({ Work: aSetup([aWindow()]) }, "Work", 2, "DP-5", { "DP-5": "Maker two" })
+  const [entry] = bootEntries(saved)
+  assert.equal(entry.monitor, "Maker two")
+  // The monitor is now on DP-9.
+  assert.equal(bootMonitorConnector(entry.monitor, ["DP-4", "DP-9"], { "DP-4": "Maker one", "DP-9": "Maker two" }), "DP-9")
+})
+
+test("a setup saved before identities still boots by its connector", () => {
+  const [entry] = bootEntries({ Work: aSetup([aWindow()], { bootWorkspace: 2, bootMonitor: "DP-5" }) })
+  assert.equal(bootMonitorConnector(entry.monitor, ["DP-4", "DP-5"], { "DP-4": "Maker one", "DP-5": "Maker two" }), "DP-5")
+  assert.equal(bootMonitorConnector(entry.monitor, ["DP-4", "DP-5"], {}), "DP-5")
 })
