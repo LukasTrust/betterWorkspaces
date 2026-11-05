@@ -1477,14 +1477,18 @@ Item {
                           anchors.fill: parent
                           implicitSize: parent.width
                           asynchronous: true
-                          visible: iconSlot.icon.kind === "image"
-                          source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : ""
+                          visible: iconSlot.icon.kind === "image" || !chipIconText.fits
+                          source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : chipIconText.fits ? "" : iconResolver.fallbackIcon.source
                         }
 
+                        // One too wide gives way to the default icon above,
+                        // like the bar's (see Workspaces.qml).
                         Text {
+                          id: chipIconText
+                          readonly property bool fits: Icons.textIconFits(implicitWidth, parent.width)
                           anchors.centerIn: parent
                           textFormat: Text.PlainText
-                          visible: iconSlot.icon.kind === "text"
+                          visible: iconSlot.icon.kind === "text" && fits
                           text: iconSlot.icon.kind === "text" ? iconSlot.icon.value : ""
                           font.family: Style.font.family
                           font.pixelSize: iconSlot.width

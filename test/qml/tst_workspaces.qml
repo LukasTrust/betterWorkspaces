@@ -547,6 +547,25 @@ TestCase {
     verify(!findChild(slot, "iconImage").visible)
   }
 
+  // A text override too wide for its icon slot would spill over the
+  // neighbouring icons (issue #10): the default icon shows instead, and the
+  // tooltip says why, with the full text.
+  function test_tooWideTextOverrideShowsDefaultIconAndWarns() {
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("Firefox")])]
+    var widget = createWidget({
+      icons: {
+        firefox: "gibts-nicht"
+      }
+    })
+
+    var slot = iconSlot(widget, 1, 0)
+    verify(slot.textTooWide)
+    verify(!findChild(slot, "iconText").visible)
+    verify(findChild(slot, "iconImage").visible)
+    compare(findChild(slot, "iconImage").source, "image://test/application-x-executable")
+    verify(slot.tooltipText.indexOf("\"gibts-nicht\" is too wide") !== -1)
+  }
+
   function test_resolvesIconFromDesktopEntryId() {
     DesktopEntries.testSetEntries({
       firefox: {
@@ -564,6 +583,24 @@ TestCase {
     compare(slot.icon.kind, "image")
     compare(findChild(slot, "iconImage").source, "image://test/firefox")
     verify(findChild(slot, "iconImage").visible)
+    verify(!findChild(slot, "iconText").visible)
+  }
+
+  // Issue #10: a desktop entry whose icon isn't in the theme used to show
+  // its icon name as text, spilling over the neighbouring icons.
+  function test_unresolvedDesktopEntryIconFallsBackToImageNotText() {
+    DesktopEntries.testSetEntries({
+      mpv: {
+        id: "mpv",
+        icon: "mpv"
+      }
+    })
+    Hyprland.workspaces.values = [makeWorkspace(1, [makeWindow("mpv")])]
+    var widget = createWidget()
+
+    var slot = iconSlot(widget, 1, 0)
+    compare(slot.icon.kind, "image")
+    compare(findChild(slot, "iconImage").source, "image://test/application-x-executable")
     verify(!findChild(slot, "iconText").visible)
   }
 

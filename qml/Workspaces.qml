@@ -412,6 +412,11 @@ BarWidget {
 
                 readonly property var icon: root.iconForWindow(iconSlot.representativeToplevel)
                 readonly property string windowTitle: root.groupTitle(iconSlot.groupToplevels)
+                // A text icon too wide for its slot shows the default icon
+                // instead (issue #10); the tooltip says why, with the full
+                // text, so the override can be fixed.
+                readonly property bool textTooWide: iconSlot.icon.kind === "text" && !iconText.fits
+                readonly property string tooltipText: iconSlot.textTooWide ? iconSlot.windowTitle + (iconSlot.windowTitle.length > 0 ? "\n\n" : "") + "⚠ Icon \"" + iconSlot.icon.value + "\" is too wide for the bar, so the default icon is shown instead." : iconSlot.windowTitle
                 // A corner circle over the icon can't fit a readable digit
                 // at the default 14px icon size without shrinking it to
                 // nothing. Instead, once grouped, the count sits next to
@@ -442,9 +447,9 @@ BarWidget {
                 // The tooltip text is a snapshot passed to bar.showTooltip,
                 // not a binding, so a title change (e.g. a browser tab
                 // switch) has to re-push it explicitly while still hovered.
-                onWindowTitleChanged: {
+                onTooltipTextChanged: {
                   if (root.bar && iconSlot.tooltipHovered)
-                    root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
+                    root.bar.showTooltip(iconSlot, iconSlot.tooltipText)
                 }
 
                 Rectangle {
@@ -482,15 +487,20 @@ BarWidget {
                       anchors.fill: parent
                       implicitSize: root.iconSize
                       asynchronous: true
-                      visible: iconSlot.icon.kind === "image"
-                      source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : ""
+                      visible: iconSlot.icon.kind === "image" || iconSlot.textTooWide
+                      source: iconSlot.icon.kind === "image" ? iconSlot.icon.source : iconSlot.textTooWide ? iconResolver.fallbackIcon.source : ""
                     }
 
+                    // An override is meant to be one glyph; anything wider
+                    // would spill over the neighbouring icons (issue #10),
+                    // so it gives way to the default icon above.
                     Text {
+                      id: iconText
                       objectName: "iconText"
+                      readonly property bool fits: Icons.textIconFits(implicitWidth, parent.width)
                       anchors.centerIn: parent
                       textFormat: Text.PlainText
-                      visible: iconSlot.icon.kind === "text"
+                      visible: iconSlot.icon.kind === "text" && fits
                       text: iconSlot.icon.kind === "text" ? iconSlot.icon.value : ""
                       font.family: root.bar ? root.bar.fontFamily : Style.font.family
                       font.pixelSize: root.iconSize
@@ -527,7 +537,7 @@ BarWidget {
                   acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                   cursorShape: Qt.PointingHandCursor
                   onEntered: if (root.bar)
-                    root.bar.showTooltip(iconSlot, iconSlot.windowTitle)
+                    root.bar.showTooltip(iconSlot, iconSlot.tooltipText)
                   onExited: if (root.bar)
                     root.bar.hideTooltip(iconSlot)
                   onClicked: function (mouse) {

@@ -90,7 +90,8 @@ Item {
   // Turns a raw icon value (a user override or a DesktopEntry.icon) into
   // either a themed/file image source, or - if it doesn't resolve to an
   // icon-theme entry - plain text. This lets a user override with either an
-  // icon-theme name or a literal glyph/emoji in shell.json.
+  // icon-theme name or a literal glyph/emoji in shell.json; a desktop entry's
+  // text result is discarded by `iconForKey`.
   function classifyIconValue(value) {
     return Icons.classifyIconValue(value, function (name) {
       return Quickshell.iconPath(name, true)
@@ -154,8 +155,14 @@ Item {
         entry = Icons.findWebAppEntry(root.installedApps(), Icons.parseWebAppClass(key))
       if (!entry)
         entry = DesktopEntries.heuristicLookup(key)
-      if (entry && entry.icon)
-        resolved = root.classifyIconValue(entry.icon)
+      // Only an image counts here. Text is for a user override's glyph; a
+      // desktop entry's icon that doesn't resolve is an icon-theme name, and
+      // drawn as text it spills over its neighbours (issue #10).
+      if (entry && entry.icon) {
+        var classified = root.classifyIconValue(entry.icon)
+        if (classified && classified.kind === "image")
+          resolved = classified
+      }
     }
     if (!resolved)
       resolved = root.fallbackIcon

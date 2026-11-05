@@ -7,6 +7,7 @@ const assert = require("node:assert/strict")
 const {
   computeWindowKey,
   classifyIconValue,
+  textIconFits,
   lookupIconOverride,
   steamAppId,
   groupToplevels,
@@ -27,6 +28,13 @@ test("matchesSearchQuery matches title or class, case-insensitively", () => {
   assert.equal(matchesSearchQuery("Inbox - Thunderbird", "thunderbird", "thunder"), true)
   assert.equal(matchesSearchQuery("Inbox - Thunderbird", "org.mozilla.Thunderbird", "mozilla"), true)
   assert.equal(matchesSearchQuery(null, null, "x"), false)
+})
+
+test("textIconFits allows a slightly wide glyph but not a word", () => {
+  assert.equal(textIconFits(14, 14), true)
+  assert.equal(textIconFits(21, 14), true)
+  assert.equal(textIconFits(22, 14), false)
+  assert.equal(textIconFits(70, 14), false)
 })
 
 test("classifyIconValue resolves images, else falls back to literal text", () => {

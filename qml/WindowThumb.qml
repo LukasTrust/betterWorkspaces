@@ -1,7 +1,10 @@
 import QtQuick
+import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
+
+import "../js/icons.js" as Icons
 
 // One window as the overview draws it: the window's own contents where the
 // compositor will hand them over, its app icon on a plain surface where it
@@ -21,6 +24,9 @@ Item {
   // The resolved icon for the fallback, as IconResolver hands it over:
   // { kind: "image", source } or { kind: "text", value }.
   property var icon: null
+  // Shown instead of a text icon too wide for its place - same default as
+  // IconResolver's own fallback.
+  property string fallbackSource: Quickshell.iconPath("application-x-executable", true)
   // Whether the overview is open at all. False tears the capture down.
   property bool capturing: false
   // True keeps the preview updating, false takes one frame and stops.
@@ -95,15 +101,19 @@ Item {
         anchors.fill: parent
         implicitSize: parent.size
         asynchronous: true
-        visible: root.icon !== null && root.icon.kind === "image"
-        source: root.icon !== null && root.icon.kind === "image" ? root.icon.source : ""
+        visible: root.icon !== null && (root.icon.kind === "image" || !fallbackText.fits)
+        source: root.icon === null ? "" : root.icon.kind === "image" ? root.icon.source : fallbackText.fits ? "" : root.fallbackSource
       }
 
+      // One too wide gives way to the default icon above, like the bar's
+      // (see Workspaces.qml).
       Text {
+        id: fallbackText
         objectName: "thumbFallbackText"
+        readonly property bool fits: Icons.textIconFits(implicitWidth, parent.width)
         anchors.centerIn: parent
         textFormat: Text.PlainText
-        visible: root.icon !== null && root.icon.kind === "text"
+        visible: root.icon !== null && root.icon.kind === "text" && fits
         text: root.icon !== null && root.icon.kind === "text" ? root.icon.value : ""
         color: Color.menu.text
         font.family: Style.font.family
@@ -135,15 +145,17 @@ Item {
         anchors.margins: Math.max(1, Math.round(badge.size * 0.12))
         implicitSize: badge.size
         asynchronous: true
-        visible: root.icon !== null && root.icon.kind === "image"
-        source: root.icon !== null && root.icon.kind === "image" ? root.icon.source : ""
+        visible: root.icon !== null && (root.icon.kind === "image" || !badgeText.fits)
+        source: root.icon === null ? "" : root.icon.kind === "image" ? root.icon.source : badgeText.fits ? "" : root.fallbackSource
       }
 
       Text {
+        id: badgeText
         objectName: "thumbBadgeText"
+        readonly property bool fits: Icons.textIconFits(implicitWidth, parent.width)
         anchors.centerIn: parent
         textFormat: Text.PlainText
-        visible: root.icon !== null && root.icon.kind === "text"
+        visible: root.icon !== null && root.icon.kind === "text" && fits
         text: root.icon !== null && root.icon.kind === "text" ? root.icon.value : ""
         color: Color.menu.text
         font.family: Style.font.family
