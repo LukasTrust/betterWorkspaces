@@ -19,6 +19,13 @@ no further setup needed. If you want key shortcuts too, add these to
 for conflicts):
 
 ```lua
+-- Omarchy 4.5+ binds SUPER+Q to "Close window" (same as SUPER+W) and
+-- SUPER+SHIFT+Q to the calculator. o.bind adds to a key rather than
+-- replacing it, so unbind the defaults first - otherwise SUPER+Q closes the
+-- focused window and opens the overview at the same time.
+hl.unbind("SUPER + Q")
+hl.unbind("SUPER + SHIFT + Q")
+
 o.bind("SUPER + Q", "Workspace overview",
   [[omarchy-shell shell toggle better-workspaces '{}']])
 o.bind("SUPER + SHIFT + Q", "Save current workspace",
