@@ -312,8 +312,14 @@ TestCase {
     })
 
     tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(3, \"DP-7\")"])
-    compare(service.monitorFor({ monitor: "Maker two", slot: 3 }), second)
-    compare(service.monitorFor({ monitor: "DP-1", slot: 3 }), first)
+    compare(service.monitorFor({
+      monitor: "Maker two",
+      slot: 3
+    }), second)
+    compare(service.monitorFor({
+      monitor: "DP-1",
+      slot: 3
+    }), first)
   }
 
   // On an Omarchy without the state file `o.workspaces` does not exist, so
@@ -345,7 +351,10 @@ TestCase {
     })
 
     tryCompare(Hyprland, "testDispatched", ["o.workspaces.focus(3, \"DP-1\")"])
-    compare(service.monitorFor({ monitor: "DP-2", slot: 3 }), first)
+    compare(service.monitorFor({
+      monitor: "DP-2",
+      slot: 3
+    }), first)
   }
 
   // Before the state file exists the block of the monitor's own active
@@ -368,8 +377,14 @@ TestCase {
 
   function test_withNoMonitorAtAllItIsBlockZero() {
     var service = makeService()
-    compare(service.workspaceIdFor({ monitor: "", slot: 7 }, null), 7)
-    compare(service.monitorFor({ monitor: "", slot: 7 }), null)
+    compare(service.workspaceIdFor({
+      monitor: "",
+      slot: 7
+    }, null), 7)
+    compare(service.monitorFor({
+      monitor: "",
+      slot: 7
+    }), null)
   }
 
   // ---- waiting for monitor geometry to settle ---------------------------------

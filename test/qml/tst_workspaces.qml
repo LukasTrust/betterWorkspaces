@@ -652,11 +652,7 @@ TestCase {
     var first = makeMonitor("DP-1", null, true)
     var second = makeMonitor("DP-2", null, false)
     Hyprland.monitors.values = [first, second]
-    Hyprland.workspaces.values = [
-      onMonitor(makeWorkspace(2, [makeWindow("foot")]), first),
-      onMonitor(makeWorkspace(18, [makeWindow("foot")]), second),
-      onMonitor(makeWorkspace(27, [makeWindow("foot")]), second)
-    ]
+    Hyprland.workspaces.values = [onMonitor(makeWorkspace(2, [makeWindow("foot")]), first), onMonitor(makeWorkspace(18, [makeWindow("foot")]), second), onMonitor(makeWorkspace(27, [makeWindow("foot")]), second)]
     barOnScreen("DP-2")
     var widget = createWidget()
     blocksFile(widget).testSetContent(stateLine(0, "DP-1") + stateLine(1, "DP-2"))
@@ -671,11 +667,7 @@ TestCase {
   function test_visitingWorkspacesComeAfterTheMonitorsOwn() {
     var first = makeMonitor("DP-1", null, true)
     Hyprland.monitors.values = [first]
-    Hyprland.workspaces.values = [
-      onMonitor(makeWorkspace(21, [makeWindow("foot")]), first),
-      onMonitor(makeWorkspace(13, [makeWindow("foot")]), first),
-      onMonitor(makeWorkspace(2, [makeWindow("foot")]), first)
-    ]
+    Hyprland.workspaces.values = [onMonitor(makeWorkspace(21, [makeWindow("foot")]), first), onMonitor(makeWorkspace(13, [makeWindow("foot")]), first), onMonitor(makeWorkspace(2, [makeWindow("foot")]), first)]
     var widget = createWidget()
     blocksFile(widget).testSetContent(stateLine(0, "DP-1"))
 
