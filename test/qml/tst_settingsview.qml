@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import Quickshell.Hyprland
 import "helpers"
 import "../../qml" as Plugin
 
@@ -57,7 +58,13 @@ TestCase {
     }
   }
 
+  Component {
+    id: monitorComponent
+    HyprlandMonitor {}
+  }
+
   function init() {
+    Hyprland.testReset()
     fakeShell.testReset()
     changedSpy.clear()
   }
@@ -430,6 +437,58 @@ TestCase {
 
     compare(store.setups.Games.bootWorkspace, 4)
     compare(store.setups.Work.bootWorkspace, null)
+  }
+
+  // A boot workspace is a slot in a monitor's block, so the assignment names
+  // the monitor too: the one with focus, which is where this form is open.
+  function test_editingABootFieldRecordsTheFocusedMonitor() {
+    Hyprland.focusedMonitor = createTemporaryObject(monitorComponent, testCase, {
+      name: "DP-2"
+    })
+    var store = makeStore({
+      Work: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    findChild(findChild(view, "boot-Work"), "bootField").testType(4)
+
+    compare(store.setups.Work.bootWorkspace, 4)
+    compare(store.setups.Work.bootMonitor, "DP-2")
+  }
+
+  // Changing the number is not moving the setup to another monitor.
+  function test_editingABootFieldKeepsTheMonitorTheSetupWasAssignedOn() {
+    Hyprland.focusedMonitor = createTemporaryObject(monitorComponent, testCase, {
+      name: "DP-2"
+    })
+    var work = aSetup(2)
+    work.bootMonitor = "DP-1"
+    var store = makeStore({
+      Work: work
+    })
+    var view = createView({}, store)
+
+    findChild(findChild(view, "boot-Work"), "bootField").testType(4)
+
+    compare(store.setups.Work.bootWorkspace, 4)
+    compare(store.setups.Work.bootMonitor, "DP-1")
+  }
+
+  function test_editingABootFieldWithNoMonitorKnownLeavesItUnset() {
+    var store = makeStore({
+      Work: aSetup(null)
+    })
+    var view = createView({}, store)
+
+    findChild(findChild(view, "boot-Work"), "bootField").testType(4)
+
+    compare(store.setups.Work.bootWorkspace, 4)
+    compare(store.setups.Work.bootMonitor, null)
+  }
+
+  function test_bootMonitorForWithoutAStoreIsTheFocusedMonitorOrNothing() {
+    var view = createView({}, null)
+    compare(view.bootMonitorFor("Work"), "")
   }
 
   // ---- renaming a setup -------------------------------------------------

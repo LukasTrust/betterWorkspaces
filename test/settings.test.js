@@ -15,15 +15,24 @@ const {
   widgetSettingsFrom,
   computeWorkspaceIds,
   workspaceLabel,
-  sameIds
+  sameIds,
+  WORKSPACE_BLOCK_SIZE,
+  blockOf,
+  slotOf,
+  workspaceIdFor,
+  parseMonitorBlocks,
+  monitorBlock,
+  focusWorkspaceRequest
 } = require("../js/settings.js")
 
 // The shape Workspaces.qml hands computeWorkspaceIds: what Hyprland knows
 // about right now. Ids listed without a "+" are empty workspaces.
-function workspaces(spec) {
+// `monitor` is the connector name each sits on, when a test cares.
+function workspaces(spec, monitor) {
   return spec.map(entry => ({
     id: parseInt(entry, 10),
-    occupied: String(entry).endsWith("+")
+    occupied: String(entry).endsWith("+"),
+    monitor: monitor || ""
   }))
 }
 
@@ -84,6 +93,47 @@ test("the focused workspace is shown even when it is empty", () => {
 test("computeWorkspaceIds copes with nothing usable passed in", () => {
   assert.deepEqual(computeWorkspaceIds(null, null), [1, 2, 3, 4, 5])
   assert.deepEqual(computeWorkspaceIds([null, undefined], {}), [1, 2, 3, 4, 5])
+})
+
+test("computeWorkspaceIds shows only the monitor's own block, always its first minWorkspaces", () => {
+  assert.deepEqual(computeWorkspaceIds([], { block: 1 }), [11, 12, 13, 14, 15])
+  assert.deepEqual(computeWorkspaceIds([], { block: 2, minWorkspaces: 2 }), [21, 22])
+  assert.deepEqual(computeWorkspaceIds(workspaces(["3+", "12+", "18", "25+"]), { block: 1 }), [11, 12, 13, 14, 15, 18])
+  assert.deepEqual(computeWorkspaceIds(workspaces(["12+", "20"]), { block: 1, minWorkspaces: 0 }), [12, 20])
+})
+
+test("computeWorkspaceIds treats a missing or unusable block as block 0", () => {
+  assert.deepEqual(computeWorkspaceIds([], { block: undefined }), [1, 2, 3, 4, 5])
+  assert.deepEqual(computeWorkspaceIds([], { block: -2 }), [1, 2, 3, 4, 5])
+  assert.deepEqual(computeWorkspaceIds([], { block: "abc" }), [1, 2, 3, 4, 5])
+  assert.deepEqual(computeWorkspaceIds([], { block: "1" }), [11, 12, 13, 14, 15])
+})
+
+test("computeWorkspaceIds puts a monitor's guests after its own, each in order", () => {
+  // 3 and 21 are on this monitor but belong to other blocks: an unplugged
+  // monitor's workspaces end up on one that is left.
+  const list = workspaces(["21+", "3+"], "DP-5").concat(workspaces(["13+", "2+"], "HDMI-A-1"))
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "DP-5", minWorkspaces: 1 }), [11, 13, 3, 21])
+})
+
+test("computeWorkspaceIds shows no guests without a monitor name to match", () => {
+  const list = workspaces(["3+", "21+"], "DP-5")
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, minWorkspaces: 1 }), [11])
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "DP-6", minWorkspaces: 1 }), [11])
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "", minWorkspaces: 1 }), [11])
+})
+
+test("computeWorkspaceIds lists a guest once, and drops special workspaces", () => {
+  const list = workspaces(["3+", "3+", "0+", "-98+"], "DP-5")
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "DP-5", minWorkspaces: 0 }), [3])
+})
+
+test("hideEmpty applies to guests too, but the monitor's shown workspace always stays", () => {
+  const list = workspaces(["3", "21+"], "DP-5")
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "DP-5", hideEmpty: true }), [21])
+  // The workspace the monitor is on, from its own block or another, is shown even empty.
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "DP-5", hideEmpty: true, focusedId: 14 }), [14, 21])
+  assert.deepEqual(computeWorkspaceIds(list, { block: 1, monitorName: "DP-5", hideEmpty: true, focusedId: 3 }), [3, 21])
 })
 
 test("sameIds spots a list the widget doesn't need to re-render", () => {
@@ -247,6 +297,92 @@ test("workspaceLabel falls back to the number past the list's end or on a blank 
   assert.equal(workspaceLabel(2, "a, , c"), "2")
   assert.equal(workspaceLabel(2, "a,   ,c"), "2")
   assert.equal(workspaceLabel(1, ",b"), "1")
+})
+
+test("workspaceLabel names a workspace by its slot in the monitor's block", () => {
+  assert.equal(workspaceLabel(11, ""), "1")
+  assert.equal(workspaceLabel(15, ""), "5")
+  assert.equal(workspaceLabel(20, ""), "0")
+  assert.equal(workspaceLabel(21, "a, b, c"), "a")
+  assert.equal(workspaceLabel(23, "a, b, c"), "c")
+  assert.equal(workspaceLabel(24, "a, b, c"), "4")
+  assert.equal(workspaceLabel(30, "1,2,3,4,5,6,7,8,9,十"), "十")
+})
+
+test("workspaceLabel leaves a special or unusable workspace id as it is", () => {
+  assert.equal(workspaceLabel(0, "a, b"), "0")
+  assert.equal(workspaceLabel(-98, "a, b"), "-98")
+  assert.equal(workspaceLabel("x", "a, b"), "x")
+})
+
+test("blockOf and slotOf split a Hyprland id into monitor block and 1-10 slot", () => {
+  assert.equal(WORKSPACE_BLOCK_SIZE, 10)
+  assert.deepEqual([1, 5, 10, 11, 20, 21, 35].map(blockOf), [0, 0, 0, 1, 1, 2, 3])
+  assert.deepEqual([1, 5, 10, 11, 20, 21, 35].map(slotOf), [1, 5, 10, 1, 10, 1, 5])
+  assert.equal(blockOf("12"), 1)
+  assert.equal(slotOf("12"), 2)
+})
+
+test("workspaceIdFor is the inverse of blockOf and slotOf", () => {
+  assert.equal(workspaceIdFor(0, 3), 3)
+  assert.equal(workspaceIdFor(1, 1), 11)
+  assert.equal(workspaceIdFor(2, 10), 30)
+  for (const id of [1, 9, 10, 11, 19, 20, 21, 40])
+    assert.equal(workspaceIdFor(blockOf(id), slotOf(id)), id)
+})
+
+test("parseMonitorBlocks reads Hyprland's tab-separated state file", () => {
+  const text = "0\tDP-4\tLG Electronics LG HDR 4K 0x00\n1\tDP-5\tDell Inc. DELL S2722QC 7NWWLD3\n"
+  assert.deepEqual(parseMonitorBlocks(text), { "DP-4": 0, "DP-5": 1 })
+  assert.deepEqual(parseMonitorBlocks("12\teDP-1\tAU Optronics 0x1\textra\tfields"), { "eDP-1": 12 })
+})
+
+test("parseMonitorBlocks skips a line that is half written or makes no sense", () => {
+  assert.deepEqual(parseMonitorBlocks("1\tDP-5"), {})
+  assert.deepEqual(parseMonitorBlocks("1\t\tidentity"), {})
+  assert.deepEqual(parseMonitorBlocks("x\tDP-5\tidentity"), {})
+  assert.deepEqual(parseMonitorBlocks("-1\tDP-5\tidentity"), {})
+  assert.deepEqual(parseMonitorBlocks("garbage\n\n0\tDP-4\tid\n"), { "DP-4": 0 })
+})
+
+test("parseMonitorBlocks copes with a missing file", () => {
+  assert.deepEqual(parseMonitorBlocks(""), {})
+  assert.deepEqual(parseMonitorBlocks(null), {})
+  assert.deepEqual(parseMonitorBlocks(undefined), {})
+})
+
+test("monitorBlock takes the state file's block for a monitor it lists", () => {
+  assert.equal(monitorBlock({ "DP-4": 0, "DP-5": 3 }, "DP-5", 2), 3)
+  assert.equal(monitorBlock({ "DP-4": 0 }, "DP-4", 15), 0)
+})
+
+test("monitorBlock falls back to the block of the monitor's active workspace, then to 0", () => {
+  assert.equal(monitorBlock({}, "DP-5", 14), 1)
+  assert.equal(monitorBlock({ "DP-4": 0 }, "DP-5", 25), 2)
+  assert.equal(monitorBlock(null, "DP-5", 7), 0)
+  assert.equal(monitorBlock({}, "DP-5", 0), 0)
+  assert.equal(monitorBlock({}, "DP-5", -98), 0)
+  assert.equal(monitorBlock({}, "", undefined), 0)
+})
+
+test("monitorBlock does not mistake an object property for a monitor", () => {
+  assert.equal(monitorBlock({}, "constructor", 12), 1)
+})
+
+test("focusWorkspaceRequest focuses a monitor's own workspace by slot and monitor name", () => {
+  assert.equal(focusWorkspaceRequest(3, 0, "DP-4"), 'o.workspaces.focus(3, "DP-4")')
+  assert.equal(focusWorkspaceRequest(10, 0, "DP-4"), 'o.workspaces.focus(10, "DP-4")')
+  assert.equal(focusWorkspaceRequest(12, 1, "DP-5"), 'o.workspaces.focus(2, "DP-5")')
+})
+
+test("focusWorkspaceRequest focuses a visiting workspace by its Hyprland id", () => {
+  assert.equal(focusWorkspaceRequest(3, 1, "DP-5"), 'hl.dsp.focus({ workspace = "3" })')
+  assert.equal(focusWorkspaceRequest(21, 0, "DP-4"), 'hl.dsp.focus({ workspace = "21" })')
+})
+
+test("focusWorkspaceRequest copes with no monitor name yet", () => {
+  assert.equal(focusWorkspaceRequest(2, 0, ""), 'o.workspaces.focus(2, "")')
+  assert.equal(focusWorkspaceRequest(2, 0, undefined), 'o.workspaces.focus(2, "")')
 })
 
 test("workspaceLabels accepts a JSON array and rejects anything else", () => {

@@ -77,7 +77,7 @@ A strip along the bottom of the overview once you've saved at least one.
   `add` (default) opens alongside them, `replace` closes them first (a
   normal close request, not a kill).
 - **×** deletes a chip; the other corner button assigns which workspace it
-  should open on at boot.
+  should open on at boot: a number 1-10 on the monitor you picked it on.
 
 Reopening a setup replays each window's own launch command and rebuilds its
 tiled layout on a best-effort basis (exact only on an empty workspace).
@@ -116,10 +116,18 @@ icon. Per-app icon overrides are only editable directly in
 }
 ```
 
+### One block of workspaces per monitor
+
+On Omarchy 4.5 every monitor has ten workspaces of its own (1-10 on the first,
+11-20 on the second, and so on). Each bar, and the overview, shows only its
+monitor's block, numbered 1-10 again. Workspaces left on a monitor after
+another one is unplugged are listed after its own.
+
 ### Workspace labels
 
 `workspaceLabels` replaces the numbers in the bar and on the overview cards
-with any comma-separated list you like, in order from workspace 1:
+with any comma-separated list you like, in order from workspace 1 (of each
+monitor, see below):
 
 ```jsonc
 "workspaceLabels": "一, 二, 三, 四, 五, 六, 七, 八, 九, 十"

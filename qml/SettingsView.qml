@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 
@@ -51,6 +52,16 @@ Item {
   function clearRenameError() {
     root.renameError = ""
     root.renameErrorFor = ""
+  }
+
+  // The monitor a boot workspace number is on: the one the setup was already
+  // assigned to, so changing the number here doesn't move it; otherwise the
+  // monitor that has focus, which is where this form is open.
+  function bootMonitorFor(name) {
+    var entry = root.store ? root.store.setups[name] : null
+    if (entry && entry.bootMonitor)
+      return entry.bootMonitor
+    return Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
   }
 
   // `Setups.renameSetup` refuses rather than resolves a collision - taking a
@@ -265,7 +276,7 @@ Item {
       Text {
         objectName: "bootSectionHint"
         textFormat: Text.PlainText
-        text: "Rename one by typing over its name and pressing Enter. The number is the workspace it opens on at boot - 0 turns that off, and at most one setup per workspace, so assigning one here takes it away from whichever setup already had it."
+        text: "Rename one by typing over its name and pressing Enter. The number is the workspace it opens on at boot, 1-10 on the monitor it was assigned on (the focused one, for a setup with none yet) - 0 turns that off, and at most one setup per workspace and monitor, so assigning one here takes it away from whichever setup already had it."
         color: Color.menu.text
         opacity: 0.7
         font.family: Style.font.family
@@ -310,7 +321,7 @@ Item {
               foreground: Color.menu.text
               Layout.preferredWidth: Style.spacing.numberFieldWidth
               onModified: function (value) {
-                root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, setupRow.modelData, value))
+                root.store.replaceAll(Setups.assignBootWorkspace(root.store.setups, setupRow.modelData, value, root.bootMonitorFor(setupRow.modelData)))
               }
             }
           }

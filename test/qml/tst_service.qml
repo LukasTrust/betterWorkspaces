@@ -38,6 +38,11 @@ TestCase {
     HyprlandToplevel {}
   }
 
+  Component {
+    id: workspaceComponent
+    HyprlandWorkspace {}
+  }
+
   function init() {
     Hyprland.testReset()
     Quickshell.testReset()
@@ -52,6 +57,20 @@ TestCase {
       width: 1920,
       height: 1080
     })
+  }
+
+  function makeNamedMonitor(name, x) {
+    return createTemporaryObject(monitorComponent, testCase, {
+      name: name,
+      x: x,
+      width: 1920,
+      height: 1080
+    })
+  }
+
+  // What Hyprland writes to $XDG_STATE_HOME/omarchy/monitor-workspaces.
+  function seedBlocks(service, text) {
+    findChild(service, "monitorBlocksFile").testSetContent(text)
   }
 
   function makeService(extraProps) {
@@ -223,6 +242,98 @@ TestCase {
     // The guard still gets written - the check happened, there was just
     // nothing to open.
     tryCompare(guardOf(service), "testWrites", ["sig-a"])
+  }
+
+  // ---- one block of workspaces per monitor ------------------------------------
+  //
+  // A boot workspace is a slot 1-10 of a monitor's block of ten (1-10 on the
+  // first monitor, 11-20 on the second, ...), so which Hyprland workspace to
+  // focus depends on the monitor the setup was assigned to.
+
+  function test_focusesTheSlotInTheBlockOfTheMonitorTheSetupWasAssignedTo() {
+    Hyprland.monitors.values = [makeNamedMonitor("DP-1", 0), makeNamedMonitor("DP-2", 1920)]
+    var service = makeService()
+    seedBlocks(service, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+    var work = anArgvSetup(["work-app"], 3)
+    work.bootMonitor = "DP-2"
+    seedSetups(service, {
+      Work: work
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"13\" })"])
+    compare(Quickshell.testExecuted, [["work-app"]])
+  }
+
+  function test_eachMonitorsSetupGoesToItsOwnBlock() {
+    Hyprland.monitors.values = [makeNamedMonitor("DP-1", 0), makeNamedMonitor("DP-2", 1920)]
+    var service = makeService()
+    seedBlocks(service, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+    var left = anArgvSetup(["left-app"], 1)
+    left.bootMonitor = "DP-1"
+    var right = anArgvSetup(["right-app"], 1)
+    right.bootMonitor = "DP-2"
+    seedSetups(service, {
+      Left: left,
+      Right: right
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })"])
+    insertToplevel("1")
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"1\" })", "hl.dsp.focus({ workspace = \"11\" })"])
+  }
+
+  function test_aSetupWithNoMonitorGoesToTheFocusedMonitor() {
+    var first = makeNamedMonitor("DP-1", 0)
+    var second = makeNamedMonitor("DP-2", 1920)
+    Hyprland.monitors.values = [first, second]
+    Hyprland.focusedMonitor = second
+    var service = makeService()
+    seedBlocks(service, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 2)
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"12\" })"])
+  }
+
+  function test_aMonitorThatIsNotPluggedInFallsBackToTheFocusedOne() {
+    var first = makeNamedMonitor("DP-1", 0)
+    Hyprland.monitors.values = [first]
+    Hyprland.focusedMonitor = first
+    var service = makeService()
+    seedBlocks(service, "0\tDP-1\tMaker one\n1\tDP-2\tMaker two\n")
+    var work = anArgvSetup(["work-app"], 3)
+    work.bootMonitor = "DP-2"
+    seedSetups(service, {
+      Work: work
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"3\" })"])
+    compare(service.monitorFor({ monitor: "DP-2", slot: 3 }), first)
+  }
+
+  // Before the state file exists the block of the monitor's own active
+  // workspace is the best there is.
+  function test_withoutTheStateFileItUsesTheBlockOfTheMonitorsActiveWorkspace() {
+    var monitor = makeNamedMonitor("DP-2", 0)
+    monitor.activeWorkspace = createTemporaryObject(workspaceComponent, testCase, {
+      id: 24,
+      name: "24"
+    })
+    Hyprland.monitors.values = [monitor]
+    Hyprland.focusedMonitor = monitor
+    var service = makeService()
+    seedSetups(service, {
+      Work: anArgvSetup(["work-app"], 2)
+    })
+
+    tryCompare(Hyprland, "testDispatched", ["hl.dsp.focus({ workspace = \"22\" })"])
+  }
+
+  function test_withNoMonitorAtAllItIsBlockZero() {
+    var service = makeService()
+    compare(service.workspaceIdFor({ monitor: "", slot: 7 }, null), 7)
+    compare(service.monitorFor({ monitor: "", slot: 7 }), null)
   }
 
   // ---- waiting for monitor geometry to settle ---------------------------------

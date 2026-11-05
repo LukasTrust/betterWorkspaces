@@ -33,6 +33,36 @@ BarWidget {
     return null
   }
 
+  // ---- this bar's monitor -------------------------------------------------
+  //
+  // Omarchy 4.5 numbers workspaces in a block of ten per monitor (1-10,
+  // 11-20, ...). Every bar shows only its own monitor's block, as 1-10 again;
+  // see MonitorBlocks.qml and the per-monitor part of settings.js.
+
+  readonly property var monitor: {
+    var window = root.QsWindow.window
+    var screen = window ? window.screen : null
+    return screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
+  }
+  readonly property string monitorName: root.monitor ? root.monitor.name : ""
+
+  // The workspace this monitor is showing. Without a monitor to ask (Hyprland
+  // not reporting any yet) the focused workspace is the best there is.
+  readonly property int activeId: {
+    if (!root.monitor)
+      return Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0
+    return root.monitor.activeWorkspace ? root.monitor.activeWorkspace.id : 0
+  }
+
+  MonitorBlocks {
+    id: monitorBlocks
+    objectName: "monitorBlocks"
+    monitorName: root.monitorName
+    activeWorkspaceId: root.activeId
+  }
+
+  readonly property int block: monitorBlocks.block
+
   // What Hyprland currently has, in the shape settings.js works on. Reading
   // each workspace's windows here is what lets `hideEmpty` follow windows
   // opening and closing without any polling: the binding below depends on
@@ -46,7 +76,8 @@ BarWidget {
         continue
       model.push({
         id: workspace.id,
-        occupied: workspace.toplevels.values.length > 0
+        occupied: workspace.toplevels.values.length > 0,
+        monitor: workspace.monitor ? workspace.monitor.name : ""
       })
     }
     return model
@@ -55,7 +86,9 @@ BarWidget {
   readonly property var candidateWorkspaceIds: Settings.computeWorkspaceIds(root.workspaceModel(), {
     minWorkspaces: root.minWorkspaces,
     hideEmpty: root.hideEmpty,
-    focusedId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0
+    focusedId: root.activeId,
+    block: root.block,
+    monitorName: root.monitorName
   })
 
   // The ids actually rendered. Changing this list rebuilds every cell, so it
@@ -69,10 +102,12 @@ BarWidget {
       root.workspaceIds = root.candidateWorkspaceIds
   }
 
+  // One of this monitor's own workspaces is focused by slot and monitor name,
+  // so Hyprland puts it on this monitor; a visiting one, by its id.
   function focusWorkspace(id) {
     if (!root.bar)
       return
-    root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
+    root.bar.run("hyprctl dispatch " + Util.shellQuote(Settings.focusWorkspaceRequest(id, root.block, root.monitorName)))
   }
 
   // Clicking a workspace you are not on switches to it; clicking the one you
@@ -81,9 +116,14 @@ BarWidget {
   // at all - the key binding is the user's to add - which is why
   // `overviewEnabled` turns this back into a plain switch rather than
   // removing the overview itself.
+  //
+  // The overview opens on whichever monitor has focus, so on a monitor
+  // that does not, the click focuses it first and only the next one opens
+  // the overview.
   function activateWorkspace(id) {
-    var alreadyThere = Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === id
-    if (alreadyThere && root.overviewEnabled) {
+    var alreadyThere = root.activeId === id
+    var onFocusedMonitor = !root.monitor || root.monitor.focused
+    if (alreadyThere && onFocusedMonitor && root.overviewEnabled) {
       root.openOverview()
       return
     }
@@ -229,6 +269,7 @@ BarWidget {
 
       workspaces.push({
         id: cell.modelData,
+        slot: Settings.slotOf(cell.modelData),
         label: cell.label,
         focused: cell.focused,
         occupied: cell.occupied,
@@ -239,6 +280,8 @@ BarWidget {
     }
 
     return {
+      monitor: root.monitorName,
+      block: root.block,
       settings: {
         maxIcons: root.maxIcons,
         iconSize: root.iconSize,
@@ -294,7 +337,9 @@ BarWidget {
         readonly property var workspace: root.workspaceById(modelData)
         readonly property var toplevels: workspace ? workspace.toplevels.values : []
         readonly property bool occupied: toplevels.length > 0
-        readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
+        // The workspace this bar's monitor is showing - on each monitor,
+        // not just the one with focus.
+        readonly property bool focused: root.activeId === modelData
         // One entry per icon shown: a group of same-app windows with
         // `groupApps` on, otherwise every window as its own single-window
         // group - so maxIcons/overflow always count icons, not raw windows.

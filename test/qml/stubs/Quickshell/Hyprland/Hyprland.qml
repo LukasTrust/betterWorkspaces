@@ -29,8 +29,17 @@ QtObject {
     root.testDispatched = root.testDispatched.concat([String(request)])
   }
 
+  // The monitor with the screen's name, as the real one looks it up; a
+  // screen no monitor has that name resolves to nothing.
   function monitorFor(screen) {
-    return root.focusedMonitor
+    if (!screen)
+      return null
+    var values = root.monitors.values
+    for (var i = 0; i < values.length; i++) {
+      if (values[i].name === screen.name)
+        return values[i]
+    }
+    return null
   }
 
   function refreshMonitors() {

@@ -70,7 +70,11 @@ function validateSetupWindow(window) {
 }
 
 // One saved setup: an ordered, non-empty list of windows, plus which
-// workspace it should open on at boot (`null`/absent for "never"). Anything
+// workspace it should open on at boot (`null`/absent for "never"). That is a
+// slot, 1-10, within a monitor's block of workspaces, and `bootMonitor` names
+// the monitor (its connector, like "DP-5") whose block it is - absent or
+// empty meaning whichever monitor has focus at boot, which is also what a
+// file from before workspaces were per monitor reads as. Anything
 // that fails this is dropped rather than crashing the whole load - one
 // broken entry shouldn't cost every other saved setup.
 function validateSetupEntry(setup) {
@@ -82,6 +86,8 @@ function validateSetupEntry(setup) {
     if (typeof setup.bootWorkspace !== "number" || setup.bootWorkspace < 1 || setup.bootWorkspace > 10)
       return false
   }
+  if (setup.bootMonitor !== null && setup.bootMonitor !== undefined && typeof setup.bootMonitor !== "string")
+    return false
   return true
 }
 
@@ -167,26 +173,36 @@ function remainingCloseTargets(pending, currentAddresses) {
   return remaining
 }
 
-// Assigns (or clears, for a falsy/out-of-range workspaceId) which workspace
-// a setup opens on at boot. At most one setup per workspace: handing this
-// one a workspace another setup already had takes it away from that one,
-// rather than leaving two setups racing for the same slot at boot - the
-// friendlier resolution over just refusing the change.
-function assignBootWorkspace(setups, name, workspaceId) {
+// Assigns (or clears, for a falsy/out-of-range slot) which workspace a setup
+// opens on at boot: slot 1-10 of `monitor`'s block of workspaces. At most one
+// setup per slot and monitor: handing this one a slot another setup already
+// had on that monitor takes it away from that one, rather than leaving two
+// setups racing for the same workspace at boot - the friendlier resolution
+// over just refusing the change. A setup with no monitor means "the monitor
+// that has focus at boot", which could be any, so it competes for the slot
+// with every other setup.
+function assignBootWorkspace(setups, name, slot, monitor) {
   var current = setups || {}
-  var target = Number(workspaceId) || 0
+  var target = Number(slot) || 0
   if (target < 1 || target > 10) target = 0
+  var where = String(monitor || "")
 
   var next = {}
   for (var key in current) {
     var entry = current[key] || {}
     var copy = {}
     for (var field in entry) copy[field] = entry[field]
-    if (target > 0 && key !== name && copy.bootWorkspace === target)
+    var there = String(copy.bootMonitor || "")
+    if (target > 0 && key !== name && copy.bootWorkspace === target && (there === where || there === "" || where === "")) {
       copy.bootWorkspace = null
+      copy.bootMonitor = null
+    }
     next[key] = copy
   }
-  if (next[name]) next[name].bootWorkspace = target > 0 ? target : null
+  if (next[name]) {
+    next[name].bootWorkspace = target > 0 ? target : null
+    next[name].bootMonitor = target > 0 && where.length > 0 ? where : null
+  }
   return next
 }
 
@@ -203,12 +219,14 @@ function shouldRunBoot(guardContent, signature) {
 }
 
 // Which setups to open at boot, and in what order: every setup with a valid
-// `bootWorkspace` (1-10), lowest workspace first so a multi-monitor layout
-// fills in a stable order. `assignBootWorkspace` already keeps this
-// one-setup-per-workspace, but the file is hand-editable, so a duplicate is
-// still resolved here rather than opening two setups onto the same
-// workspace - alphabetically first name wins, same tie-break `setupNames`
-// already uses elsewhere.
+// `bootWorkspace` (slot 1-10), as { name, slot, monitor } - `monitor` being
+// its `bootMonitor`, or "" for the monitor with focus. Monitors with a name
+// go in name order after the unnamed ones, lowest slot first within each, so
+// a multi-monitor layout fills in a stable order. `assignBootWorkspace`
+// already keeps this one-setup-per-workspace, but the file is hand-editable,
+// so a duplicate is still resolved here rather than opening two setups onto
+// the same workspace - alphabetically first name wins, same tie-break
+// `setupNames` already uses elsewhere.
 function bootEntries(setups) {
   var all = setups || {}
   var names = Object.keys(all).sort()
@@ -217,13 +235,18 @@ function bootEntries(setups) {
   for (var i = 0; i < names.length; i++) {
     var name = names[i]
     var entry = all[name] || {}
-    var workspaceId = entry.bootWorkspace
-    if (typeof workspaceId !== "number" || workspaceId < 1 || workspaceId > 10) continue
-    if (seenWorkspace[workspaceId]) continue
-    seenWorkspace[workspaceId] = true
-    entries.push({ name: name, workspaceId: workspaceId })
+    var slot = entry.bootWorkspace
+    if (typeof slot !== "number" || slot < 1 || slot > 10) continue
+    var monitor = typeof entry.bootMonitor === "string" ? entry.bootMonitor : ""
+    var key = monitor + "\t" + slot
+    if (seenWorkspace[key]) continue
+    seenWorkspace[key] = true
+    entries.push({ name: name, slot: slot, monitor: monitor })
   }
-  entries.sort(function (a, b) { return a.workspaceId - b.workspaceId })
+  entries.sort(function (a, b) {
+    if (a.monitor !== b.monitor) return a.monitor < b.monitor ? -1 : 1
+    return a.slot - b.slot
+  })
   return entries
 }
 

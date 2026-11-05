@@ -2,3 +2,4 @@ module Quickshell
 singleton Quickshell 1.0 Quickshell.qml
 singleton DesktopEntries 1.0 DesktopEntries.qml
 ObjectModel 1.0 ObjectModel.qml
+singleton QsWindow 1.0 QsWindow.qml
